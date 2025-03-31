@@ -13,6 +13,10 @@ export type DebateStepType =
   | "청중 질문" 
   | "패널 질문" 
   | "결과 발표"
+  | "기조발언"
+
+// 토론 팀 타입
+export type DebateTeam = "찬성" | "반대" | "긍정" | "부정" | null;
 
 // 아이콘 타입
 export type IconType = "zap" | "users" | "award" | "school" | "timer" | string;
@@ -22,7 +26,7 @@ export interface DebateStep {
   id: string
   type: DebateStepType
   time: number // in seconds
-  team?: "찬성" | "반대" | null
+  team?: DebateTeam
   maxSpeakTime?: number // for free debate, max time per speech in seconds
 }
 
@@ -45,4 +49,6 @@ export interface SchoolVariant {
   name: string
   university: string
   steps: DebateStep[]
+  icon?: IconType;
+  description?: string;
 } 

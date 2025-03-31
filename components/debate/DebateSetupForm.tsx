@@ -43,29 +43,64 @@ const formatTime = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
+// 팀 아이콘과 색상 설정 (찬성/반대/긍정/부정)
+const getTeamStyle = (team: string | null | undefined) => {
+  if (team === "찬성" || team === "긍정") {
+    return "bg-blue-100 text-blue-800";
+  } else if (team === "반대" || team === "부정") {
+    return "bg-orange-100 text-orange-800";
+  }
+  return "bg-gray-100 text-gray-800";
+}
+
+// getDefaultTimeForType 함수 아래에 추가
+// 순서 추가 시 팀 설정
+const getDefaultTeamForType = (type: string): "찬성" | "반대" | "긍정" | "부정" | null => {
+  switch (type) {
+    case "자유토론":
+    case "숙의시간":
+    case "사회자 인사":
+    case "청중 사전 투표":
+    case "청중 질문":
+    case "패널 질문":
+    case "결과 발표":
+      return null;
+    default:
+      return "찬성"; // 기본적으로 찬성으로 설정
+  }
+}
+
 export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDebate }: DebateSetupFormProps) {
   const [customSteps, setCustomSteps] = useState<DebateStep[]>([...selectedTemplate.steps])
   const [affirmativeCount, setAffirmativeCount] = useState(2)
   const [negativeCount, setNegativeCount] = useState(2)
   const [showAddStepModal, setShowAddStepModal] = useState(false)
-  const [enableDebaters, setEnableDebaters] = useState(true)
+  const [enableDebaters, setEnableDebaters] = useState(false)
   const [showSchoolVariantModal, setShowSchoolVariantModal] = useState(false)
   const [showGuide, setShowGuide] = useState(true)
   const [showGuidePopup, setShowGuidePopup] = useState(false)
   
-  // 토론자 이름 설정
+  // 토론자 이름 설정 - 빈 문자열로 초기화
   const [debaterNames, setDebaterNames] = useState<string[]>([
-    "찬성1", "찬성2", "반대1", "반대2"
+    "", "", "", ""
   ])
   
   // 토론자 수가 변경되면 이름 배열 업데이트
   useEffect(() => {
     if (enableDebaters) {
-      const affNames = Array.from({ length: affirmativeCount }, (_, i) => debaterNames[i] || `찬성${i+1}`);
-      const negNames = Array.from({ length: negativeCount }, (_, i) => debaterNames[affirmativeCount + i] || `반대${i+1}`);
+      const newNames = [...debaterNames];
       
-      // 기존 이름 유지하면서 새로운 배열 생성
-      setDebaterNames([...affNames, ...negNames]);
+      // 기존 이름 보존하면서 새 항목은 빈 문자열로 초기화
+      while (newNames.length < affirmativeCount + negativeCount) {
+        newNames.push("");
+      }
+      
+      // 초과 항목 제거
+      if (newNames.length > affirmativeCount + negativeCount) {
+        newNames.length = affirmativeCount + negativeCount;
+      }
+      
+      setDebaterNames(newNames);
     }
   }, [affirmativeCount, negativeCount]);
   
@@ -101,6 +136,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         return 180 // 3 minutes  
       case "결과 발표":
         return 120 // 2 minutes
+      case "기조발언":
+        return 150 // 2분 30초
       default:
         return 120
     }
@@ -112,13 +149,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
       id: `step-${Date.now()}`,
       type: type as any,
       time: getDefaultTimeForType(type),
-      team: type === "자유토론" || 
-             type === "숙의시간" || 
-             type === "사회자 인사" || 
-             type === "청중 사전 투표" || 
-             type === "청중 질문" || 
-             type === "패널 질문" || 
-             type === "결과 발표" ? null : "찬성",
+      team: getDefaultTeamForType(type),
       ...(type === "자유토론" || type === "청중 질문" || type === "패널 질문" ? { maxSpeakTime: 60 } : {}),
     }
     setCustomSteps([...customSteps, newStep])
@@ -170,17 +201,23 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
     }
   }
   
-  // 팀 전환
+  // 팀 전환 - 찬성/반대/긍정/부정 4개 팀 간 순환
   const handleToggleTeam = (index: number) => {
     const newSteps = [...customSteps]
     const currentTeam = newSteps[index].team;
-    const currentMaxSpeakTime = newSteps[index].maxSpeakTime;
     
-    // 팀 변경
-    if (newSteps[index].team === "찬성") {
-      newSteps[index].team = "반대"
-    } else if (newSteps[index].team === "반대") {
-      newSteps[index].team = "찬성"
+    // 팀 변경 - 찬성 -> 반대 -> 긍정 -> 부정 -> 찬성 순으로 순환
+    if (currentTeam === "찬성") {
+      newSteps[index].team = "반대";
+    } else if (currentTeam === "반대") {
+      newSteps[index].team = "긍정";
+    } else if (currentTeam === "긍정") {
+      newSteps[index].team = "부정";
+    } else if (currentTeam === "부정") {
+      newSteps[index].team = "찬성";
+    } else {
+      // null인 경우 찬성으로 설정
+      newSteps[index].team = "찬성";
     }
     
     setCustomSteps(newSteps)
@@ -197,8 +234,23 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
     setShowSchoolVariantModal(false)
   }
   
-  // 토론 시작
+  // 토론 시작 함수 수정 - 비어있는 이름은 기본값으로 설정
   const handleStartDebate = () => {
+    // 빈 이름을 기본값으로 설정
+    const finalDebaterNames = enableDebaters 
+      ? debaterNames.map((name, index) => {
+          if (!name.trim()) {
+            // 빈 이름인 경우 기본값 설정
+            if (index < affirmativeCount) {
+              return `찬성${index + 1}`;
+            } else {
+              return `반대${index - affirmativeCount + 1}`;
+            }
+          }
+          return name;
+        })
+      : [];
+    
     onStartDebate({
       steps: customSteps,
       affirmativeCount: enableDebaters ? affirmativeCount : 0,
@@ -206,7 +258,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
       templateName: selectedTemplate.name,
       enableDebaters,
       university: selectedTemplate.university || null,
-      debaterNames: enableDebaters ? debaterNames : []
+      debaterNames: finalDebaterNames
     })
   }
   
@@ -303,7 +355,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
       {/* 토론 방식 안내 모달 */}
       {showGuide && selectedTemplate.guide && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">토론 방식 안내</h3>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 mb-6">
               <div className="flex gap-3">
@@ -328,7 +380,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
 
       {showSchoolVariantModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">학교별 토론 방식 선택</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {selectedTemplate.schoolVariants?.map((variant) => (
@@ -395,7 +447,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                         {step.team !== null && (
                           <div 
                             className={`flex items-center justify-center px-2 py-1 text-xs font-medium rounded cursor-pointer ${
-                              step.team === "찬성" ? "bg-blue-100 text-blue-800" : "bg-orange-100 text-orange-800"
+                              getTeamStyle(step.team)
                             }`}
                             onClick={() => handleToggleTeam(index)}
                           >
@@ -504,6 +556,13 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
             <Button
               variant="outline"
               className="text-sm"
+              onClick={() => handleAddStep("기조발언")}
+            >
+              기조발언
+            </Button>
+            <Button
+              variant="outline"
+              className="text-sm"
               onClick={() => handleAddStep("반론")}
             >
               반론
@@ -575,7 +634,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         )}
       </div>
 
-      {/* 토론자 이름 설정 - 그 다음 배치 */}
+      {/* 토론자 설정 섹션 수정 - 높이 제한과 스크롤 추가 */}
       <div className="bg-white rounded-lg p-6 border shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center">
@@ -592,8 +651,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         </div>
 
         {enableDebaters && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-6 max-h-80 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-base font-medium text-blue-700 flex items-center">
@@ -625,10 +684,10 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                     <div key={i} className="flex items-center gap-2">
                       <div className="w-14 text-sm font-medium text-gray-500">찬성 {i+1}</div>
                       <Input 
-                        value={debaterNames[i] || `찬성${i+1}`}
+                        value={debaterNames[i] || ""}
                         onChange={(e) => handleDebaterNameChange(i, e.target.value)}
                         className="flex-1"
-                        placeholder={`찬성${i+1} 이름`}
+                        placeholder={`찬성 ${i+1} 이름`}
                       />
                     </div>
                   ))}
@@ -666,10 +725,10 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                     <div key={i} className="flex items-center gap-2">
                       <div className="w-14 text-sm font-medium text-gray-500">반대 {i+1}</div>
                       <Input 
-                        value={debaterNames[affirmativeCount + i] || `반대${i+1}`}
+                        value={debaterNames[affirmativeCount + i] || ""}
                         onChange={(e) => handleDebaterNameChange(affirmativeCount + i, e.target.value)}
                         className="flex-1"
-                        placeholder={`반대${i+1} 이름`}
+                        placeholder={`반대 ${i+1} 이름`}
                       />
                     </div>
                   ))}

@@ -8,24 +8,13 @@ import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Home, Volume2, Volum
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Users } from "lucide-react"
-
-// Define debate step types
-type DebateStepType = "입론" | "자유토론" | "숙의시간" | "마무리 발언" | "교차질의" | "반론"
-
-// Define debate step interface
-interface DebateStep {
-  id: string
-  type: DebateStepType
-  time: number // in seconds
-  team?: "찬성" | "반대" | null
-  maxSpeakTime?: number // for free debate, max time per speech in seconds
-}
+import { DebateStep, DebateStepType, DebateTeam } from "@/lib/types/debate"
 
 // Define debater interface
 interface Debater {
   id: string
   name: string
-  team: "찬성" | "반대"
+  team: "찬성" | "반대" | "긍정" | "부정"
   totalSpeakTime: number
   isSpeaking: boolean
 }
@@ -43,15 +32,22 @@ export default function DebatePage() {
   const [teamRemainingTime, setTeamRemainingTime] = useState<{
     찬성: number
     반대: number
-  }>({ 찬성: 0, 반대: 0 })
+    긍정: number
+    부정: number
+  }>({ 찬성: 0, 반대: 0, 긍정: 0, 부정: 0 })
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [enableDebaters, setEnableDebaters] = useState(true)
-  const [activeSpeakingTeam, setActiveSpeakingTeam] = useState<"찬성" | "반대" | null>(null)
+  const [activeSpeakingTeam, setActiveSpeakingTeam] = useState<"찬성" | "반대" | "긍정" | "부정" | null>(null)
   const [showGuide, setShowGuide] = useState(false)
   const [showTimeEndAlert, setShowTimeEndAlert] = useState<{show: boolean, message: string}>({show: false, message: ""})
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // 팀 타입 확인 함수
+  const hasTeamType = (steps: DebateStep[], teamType: DebateTeam): boolean => {
+    return steps.some(step => step.team === teamType);
+  }
 
   // Load debate configuration from localStorage
   useEffect(() => {
@@ -74,11 +70,18 @@ export default function DebatePage() {
     // Initialize debaters
     const newDebaters: Debater[] = []
     if (config.enableDebaters) {
+      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
+      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
+      const hasNegativeTeam = hasTeamType(config.steps, "부정");
+      
+      const positiveTeam = hasPositiveTeam ? "긍정" : "찬성";
+      const negativeTeam = hasNegativeTeam ? "부정" : "반대";
+      
       for (let i = 0; i < config.affirmativeCount; i++) {
         newDebaters.push({
           id: `aff-${i}`,
-          name: config.debaterNames && config.debaterNames[i] ? config.debaterNames[i] : `찬성${i + 1}`,
-          team: "찬성",
+          name: config.debaterNames && config.debaterNames[i] ? config.debaterNames[i] : `${positiveTeam}${i + 1}`,
+          team: positiveTeam as "찬성" | "반대" | "긍정" | "부정",
           totalSpeakTime: 0,
           isSpeaking: false,
         })
@@ -88,25 +91,32 @@ export default function DebatePage() {
           id: `neg-${i}`,
           name: config.debaterNames && config.debaterNames[config.affirmativeCount + i] 
             ? config.debaterNames[config.affirmativeCount + i] 
-            : `반대${i + 1}`,
-          team: "반대",
+            : `${negativeTeam}${i + 1}`,
+          team: negativeTeam as "찬성" | "반대" | "긍정" | "부정",
           totalSpeakTime: 0,
           isSpeaking: false,
         })
       }
     } else {
       // 토론자 설정이 비활성화되어 있어도 팀 시간 조절을 위한 더미 토론자 추가
+      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
+      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
+      const hasNegativeTeam = hasTeamType(config.steps, "부정");
+      
+      const positiveTeam = hasPositiveTeam ? "긍정" : "찬성";
+      const negativeTeam = hasNegativeTeam ? "부정" : "반대";
+      
       newDebaters.push({
         id: `aff-team`,
-        name: `찬성팀`,
-        team: "찬성",
+        name: `${positiveTeam}팀`,
+        team: positiveTeam as "찬성" | "반대" | "긍정" | "부정",
         totalSpeakTime: 0,
         isSpeaking: false,
       })
       newDebaters.push({
         id: `neg-team`,
-        name: `반대팀`,
-        team: "반대",
+        name: `${negativeTeam}팀`,
+        team: negativeTeam as "찬성" | "반대" | "긍정" | "부정",
         totalSpeakTime: 0,
         isSpeaking: false,
       })
@@ -116,10 +126,16 @@ export default function DebatePage() {
     // Initialize team remaining time for free debate
     const freeDebateStep = config.steps.find((step: DebateStep) => step.type === "자유토론")
     if (freeDebateStep) {
+      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
+      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
+      const hasNegativeTeam = hasTeamType(config.steps, "부정");
+      
       setTeamRemainingTime({
-        찬성: freeDebateStep.time / 2, // Split time equally
-        반대: freeDebateStep.time / 2,
-      })
+        찬성: hasPositiveTeam ? 0 : freeDebateStep.time / 2,
+        반대: hasNegativeTeam ? 0 : freeDebateStep.time / 2,
+        긍정: hasPositiveTeam ? freeDebateStep.time / 2 : 0,
+        부정: hasNegativeTeam ? freeDebateStep.time / 2 : 0,
+      });
     }
 
     // Initialize audio
@@ -169,30 +185,33 @@ export default function DebatePage() {
         // 자유토론에서 현재 발언 중인 팀이 있다면 팀 시간 갱신
         if (steps[currentStepIndex]?.type === "자유토론" && activeSpeakingTeam) {
           setTeamRemainingTime((prev) => {
-            const newTime = Math.max(0, prev[activeSpeakingTeam] - 1)
+            // 이 팀의 남은 시간 가져오기 (null/undefined 체크 포함)
+            const prevTime = prev[activeSpeakingTeam] || 0;
+            const newTime = Math.max(0, prevTime - 1);
             
             // 팀 시간이 종료된 경우
-            if (newTime === 0 && prev[activeSpeakingTeam] > 0) {
+            if (newTime === 0 && prevTime > 0) {
               if (soundEnabled) {
-                audioRef.current?.play()
+                audioRef.current?.play();
               }
               
               // 타이머 종료 알림 표시
               setShowTimeEndAlert({
                 show: true, 
                 message: `${activeSpeakingTeam}팀의 시간이 모두 종료되었습니다.`
-              })
+              });
               
               // 일정 시간 후 알림 숨기기
               setTimeout(() => {
-                setShowTimeEndAlert({show: false, message: ""})
-              }, 5000)
+                setShowTimeEndAlert({show: false, message: ""});
+              }, 5000);
             }
             
+            // 새 시간 상태 반환
             return {
               ...prev,
               [activeSpeakingTeam]: newTime
-            }
+            };
           })
         }
 
@@ -273,8 +292,8 @@ export default function DebatePage() {
     setSpeakerTimeRemaining(0)
   }
 
-  // 팀 발언 토글
-  const handleTeamSpeaking = (team: "찬성" | "반대") => {
+  // 팀 발언 토글 - 타입 수정
+  const handleTeamSpeaking = (team: "찬성" | "반대" | "긍정" | "부정") => {
     // 토론자 설정이 비활성화된 경우
     if (!enableDebaters || debaters.length <= 2) {
       // 같은 팀을 다시 클릭하면 끄기
@@ -284,7 +303,8 @@ export default function DebatePage() {
       }
 
       // 팀 남은 시간 체크
-      if (teamRemainingTime[team] <= 0) {
+      const teamTime = teamRemainingTime[team] || 0
+      if (teamTime <= 0) {
         if (soundEnabled) {
           audioRef.current?.play()
         }
@@ -302,7 +322,7 @@ export default function DebatePage() {
         // 다른 팀이거나 발언 시간이 0이면 새로 계산
         if (!isSameTeam || speakerTimeRemaining === 0) {
           const maxTime = steps[currentStepIndex].maxSpeakTime || 0;
-          newSpeakerTimeRemaining = Math.min(maxTime, teamRemainingTime[team]);
+          newSpeakerTimeRemaining = Math.min(maxTime, teamTime);
         }
         
         setCurrentSpeaker(teamDebater)
@@ -324,8 +344,11 @@ export default function DebatePage() {
       return
     }
 
+    // Team time check with null/undefined check
+    const teamTime = teamRemainingTime[debater.team] || 0;
+    
     // Check if team has remaining time
-    if (teamRemainingTime[debater.team] <= 0) {
+    if (teamTime <= 0) {
       if (soundEnabled) {
         audioRef.current?.play()
       }
@@ -339,7 +362,7 @@ export default function DebatePage() {
     // 새 발언자나 팀이 다른 경우에만 최대 발언 시간 새로 계산
     if (!isSameTeam || speakerTimeRemaining === 0) {
       const maxTime = steps[currentStepIndex].maxSpeakTime || 0;
-      newSpeakerTimeRemaining = Math.min(maxTime, teamRemainingTime[debater.team]);
+      newSpeakerTimeRemaining = Math.min(maxTime, teamTime);
     }
     
     // Set new speaker
@@ -372,6 +395,36 @@ export default function DebatePage() {
   const calculateProgress = (current: number, total: number): number => {
     return Math.max(0, Math.min(100, (current / total) * 100))
   }
+
+  // 팀 색상 반환 함수 추가
+  const getTeamColor = (team: "찬성" | "반대" | "긍정" | "부정" | null) => {
+    if (team === "찬성" || team === "긍정") {
+      return "text-blue-500";
+    } else if (team === "반대" || team === "부정") {
+      return "text-orange-500";
+    }
+    return "";
+  };
+
+  // 팀 배경색 반환 함수
+  const getTeamBgColor = (team: "찬성" | "반대" | "긍정" | "부정" | null) => {
+    if (team === "찬성" || team === "긍정") {
+      return "bg-blue-100";
+    } else if (team === "반대" || team === "부정") {
+      return "bg-orange-100";
+    }
+    return "";
+  };
+
+  // 긍정/찬성 팀 여부 확인
+  const isPositiveTeam = (steps: DebateStep[]) => {
+    return hasTeamType(steps, "긍정");
+  };
+
+  // 부정/반대 팀 여부 확인
+  const isNegativeTeam = (steps: DebateStep[]) => {
+    return hasTeamType(steps, "부정");
+  };
 
   return (
     <div className="container mx-auto py-4 px-4 flex flex-col min-h-screen">
@@ -491,12 +544,12 @@ export default function DebatePage() {
             {activeSpeakingTeam && (
               <div className="text-center mb-6">
                 <div className="text-sm font-medium">현재 발언</div>
-                <div className={`text-2xl font-bold ${activeSpeakingTeam === "찬성" ? "text-blue-500" : "text-orange-500"}`}>
+                <div className={`text-2xl font-bold ${getTeamColor(activeSpeakingTeam)}`}>
                   {activeSpeakingTeam}팀 {formatTime(speakerTimeRemaining)}
                 </div>
                 <Progress
                   value={calculateProgress(speakerTimeRemaining, currentStep?.maxSpeakTime || 1)}
-                  className={`w-full h-1 mt-1 ${activeSpeakingTeam === "찬성" ? "bg-blue-100" : "bg-orange-100"}`}
+                  className={`w-full h-1 mt-1 ${getTeamBgColor(activeSpeakingTeam)}`}
                 />
               </div>
             )}
@@ -505,44 +558,64 @@ export default function DebatePage() {
             <div className="grid grid-cols-2 gap-8 w-full mb-6">
               <div 
                 className={`text-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                  activeSpeakingTeam === "찬성" 
+                  activeSpeakingTeam === "찬성" || activeSpeakingTeam === "긍정"
                     ? "border-blue-500 bg-blue-50"
                     : "border-gray-200 hover:border-blue-300"
                 }`}
-                onClick={() => handleTeamSpeaking("찬성")}
+                onClick={() => {
+                  // 현재 설정된 팀 타입 확인 (긍정/찬성)
+                  const positiveTeam = isPositiveTeam(steps) ? "긍정" : "찬성";
+                  handleTeamSpeaking(positiveTeam);
+                }}
               >
-                <div className="font-medium mb-1">찬성팀</div>
-                <div className="text-3xl font-bold text-blue-500 mb-2">{formatTime(teamRemainingTime.찬성)}</div>
+                <div className="font-medium mb-1">
+                  {isPositiveTeam(steps) ? "긍정팀" : "찬성팀"}
+                </div>
+                <div className="text-3xl font-bold text-blue-500 mb-2">
+                  {isPositiveTeam(steps) 
+                    ? formatTime(teamRemainingTime.긍정 || 0) 
+                    : formatTime(teamRemainingTime.찬성 || 0)}
+                </div>
                 <Progress 
-                  value={calculateProgress(teamRemainingTime.찬성, currentStep?.time / 2 || 1)} 
+                  value={calculateProgress(
+                    isPositiveTeam(steps)
+                      ? (teamRemainingTime.긍정 || 0) 
+                      : (teamRemainingTime.찬성 || 0), 
+                    currentStep?.time ? currentStep.time / 2 : 1
+                  )} 
                   className="w-full h-3" 
                 />
-                {currentStep?.maxSpeakTime && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    최대 발언: {formatTime(currentStep.maxSpeakTime)}
-                  </div>
-                )}
               </div>
 
               <div 
                 className={`text-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                  activeSpeakingTeam === "반대" 
+                  activeSpeakingTeam === "반대" || activeSpeakingTeam === "부정"
                     ? "border-orange-500 bg-orange-50"
                     : "border-gray-200 hover:border-orange-300"
                 }`}
-                onClick={() => handleTeamSpeaking("반대")}
+                onClick={() => {
+                  // 현재 설정된 팀 타입 확인 (부정/반대)
+                  const negativeTeam = isNegativeTeam(steps) ? "부정" : "반대";
+                  handleTeamSpeaking(negativeTeam);
+                }}
               >
-                <div className="font-medium mb-1">반대팀</div>
-                <div className="text-3xl font-bold text-orange-500 mb-2">{formatTime(teamRemainingTime.반대)}</div>
+                <div className="font-medium mb-1">
+                  {isNegativeTeam(steps) ? "부정팀" : "반대팀"}
+                </div>
+                <div className="text-3xl font-bold text-orange-500 mb-2">
+                  {isNegativeTeam(steps) 
+                    ? formatTime(teamRemainingTime.부정 || 0) 
+                    : formatTime(teamRemainingTime.반대 || 0)}
+                </div>
                 <Progress 
-                  value={calculateProgress(teamRemainingTime.반대, currentStep?.time / 2 || 1)} 
+                  value={calculateProgress(
+                    isNegativeTeam(steps)
+                      ? (teamRemainingTime.부정 || 0) 
+                      : (teamRemainingTime.반대 || 0), 
+                    currentStep?.time ? currentStep.time / 2 : 1
+                  )} 
                   className="w-full h-3" 
                 />
-                {currentStep?.maxSpeakTime && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    최대 발언: {formatTime(currentStep.maxSpeakTime)}
-                  </div>
-                )}
               </div>
             </div>
             
@@ -555,16 +628,18 @@ export default function DebatePage() {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-blue-700 mb-1">찬성팀</h4>
+                    <h4 className="text-xs font-medium text-blue-700 mb-1">
+                      {isPositiveTeam(steps) ? "긍정팀" : "찬성팀"}
+                    </h4>
                     <div className="flex flex-wrap gap-2">
-                      {debaters.filter(d => d.team === "찬성").map((debater) => (
+                      {debaters.filter(d => d.team === "찬성" || d.team === "긍정").map((debater) => (
                         <button
                           key={debater.id}
                           className={`flex items-center justify-between w-full p-2 rounded-md text-xs ${
                             debater.isSpeaking
                               ? "bg-blue-500 text-white font-medium"
                               : "bg-white border border-blue-100 text-blue-700 hover:bg-blue-50"
-                          } ${teamRemainingTime["찬성"] <= 0 ? "opacity-50" : ""}`}
+                          } ${teamRemainingTime[debater.team] <= 0 ? "opacity-50" : ""}`}
                           onClick={() => handleSpeakerSelect(debater)}
                         >
                           <span>{debater.name}</span>
@@ -577,16 +652,18 @@ export default function DebatePage() {
                   </div>
                   
                   <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-orange-700 mb-1">반대팀</h4>
+                    <h4 className="text-xs font-medium text-orange-700 mb-1">
+                      {isNegativeTeam(steps) ? "부정팀" : "반대팀"}
+                    </h4>
                     <div className="flex flex-wrap gap-2">
-                      {debaters.filter(d => d.team === "반대").map((debater) => (
+                      {debaters.filter(d => d.team === "반대" || d.team === "부정").map((debater) => (
                         <button
                           key={debater.id}
                           className={`flex items-center justify-between w-full p-2 rounded-md text-xs ${
                             debater.isSpeaking
                               ? "bg-orange-500 text-white font-medium"
                               : "bg-white border border-orange-100 text-orange-700 hover:bg-orange-50"
-                          } ${teamRemainingTime["반대"] <= 0 ? "opacity-50" : ""}`}
+                          } ${teamRemainingTime[debater.team] <= 0 ? "opacity-50" : ""}`}
                           onClick={() => handleSpeakerSelect(debater)}
                         >
                           <span>{debater.name}</span>
