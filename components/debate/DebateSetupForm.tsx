@@ -274,10 +274,10 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-20 w-full max-w-full overflow-x-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center">
-          <h2 className="text-2xl font-bold">{selectedTemplate.name} 설정</h2>
+          <h2 className="text-xl sm:text-2xl font-bold">{selectedTemplate.name} 설정</h2>
           <div className="relative ml-2">
             <Button
               variant="ghost"
@@ -288,9 +288,9 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
               <Info className="h-4 w-4" />
             </Button>
             
-            {/* 설정 가이드 팝업 */}
+            {/* 설정 가이드 팝업 - 위치 조정 */}
             {showGuidePopup && (
-              <div className="absolute left-0 top-8 z-50 bg-white shadow-lg rounded-md border p-3 w-64">
+              <div className="absolute left-0 sm:left-auto sm:right-0 top-8 z-50 bg-white shadow-lg rounded-md border p-3 w-64 max-w-[90vw]">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-xs font-medium">토론 설정 가이드</h3>
                   <Button 
@@ -317,7 +317,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {selectedTemplate.schoolVariants && selectedTemplate.schoolVariants.length > 0 ? (
             <Button 
               variant="outline" 
@@ -354,15 +354,15 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
 
       {/* 토론 방식 안내 모달 */}
       {showGuide && selectedTemplate.guide && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">토론 방식 안내</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 mb-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg sm:text-xl font-bold mb-4">토론 방식 안내</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-5 mb-6">
               <div className="flex gap-3">
                 <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-medium text-blue-700 mb-2">토론 안내</h4>
-                  <p className="text-blue-800">{selectedTemplate.guide}</p>
+                  <p className="text-blue-800 text-sm">{selectedTemplate.guide}</p>
                 </div>
               </div>
             </div>
@@ -378,10 +378,11 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         </div>
       )}
 
+      {/* 학교별 토론 방식 선택 모달 */}
       {showSchoolVariantModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">학교별 토론 방식 선택</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg sm:text-xl font-bold mb-4">학교별 토론 방식 선택</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {selectedTemplate.schoolVariants?.map((variant) => (
                 <Card 
@@ -389,7 +390,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                   className="cursor-pointer hover:border-primary"
                   onClick={() => handleSelectSchoolVariant(variant)}
                 >
-                  <CardContent className="p-4">
+                  <CardContent className="p-3 sm:p-4">
                     <div className="flex items-center gap-2 mb-2">
                       {getIconComponent(variant.icon || "default")}
                       <h4 className="font-medium">{variant.name}</h4>
@@ -412,9 +413,9 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         </div>
       )}
 
-      {/* 토론 순서 및 시간 설정 - 먼저 배치 */}
-      <div className="bg-white rounded-lg p-6 border shadow-sm">
-        <h3 className="text-lg font-semibold mb-4 flex items-center">
+      {/* 토론 순서 및 시간 설정 - 모바일 앱 최적화 */}
+      <div className="bg-white rounded-lg p-3 sm:p-6 border shadow-sm">
+        <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center">
           <Clock className="mr-2 h-5 w-5" />
           토론 순서 및 시간 설정
         </h3>
@@ -425,7 +426,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
               <div
                 {...provided.droppableProps}
                 ref={provided.innerRef}
-                className="space-y-3"
+                className="space-y-3 max-h-[50vh] overflow-y-auto pr-1"
               >
                 {customSteps.map((step, index) => (
                   <Draggable
@@ -438,9 +439,9 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                         ref={provided.innerRef}
                         {...provided.draggableProps}
                         {...provided.dragHandleProps}
-                        className="flex items-center gap-3 bg-gray-50 p-3 rounded-md border"
+                        className="flex flex-wrap md:flex-nowrap items-center gap-2 bg-gray-50 p-2 sm:p-3 rounded-md border"
                       >
-                        <div className="font-medium w-24 flex-shrink-0">
+                        <div className="font-medium w-full md:w-24 flex-shrink-0 truncate text-sm">
                           {index + 1}. {step.type}
                         </div>
 
@@ -455,11 +456,11 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                           </div>
                         )}
 
-                        <div className="flex-1 flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-1 sm:gap-2 min-w-0">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 px-2"
+                            className="h-7 px-1 sm:px-2 flex-shrink-0"
                             onClick={() => handleUpdateTime(index, Math.max(10, step.time - 10))}
                           >
                             <Minus className="h-3 w-3" />
@@ -469,28 +470,28 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                             type="text"
                             value={formatTime(step.time)}
                             onChange={(e) => handleTimeInputChange(index, e.target.value)}
-                            className="flex-1 text-center h-7 px-2"
+                            className="flex-1 text-center h-7 px-1 sm:px-2 min-w-0"
                           />
 
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 px-2"
+                            className="h-7 px-1 sm:px-2 flex-shrink-0"
                             onClick={() => handleUpdateTime(index, step.time + 10)}
                           >
                             <Plus className="h-3 w-3" />
                           </Button>
                         </div>
 
-                        {/* 자유토론 설정 */}
+                        {/* 자유토론 설정 - 모바일 앱에서 최적화 */}
                         {step.type === "자유토론" && step.maxSpeakTime !== undefined && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 mt-1 md:mt-0 w-full md:w-auto">
                             <div className="text-xs text-gray-600">최대 발언:</div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 sm:gap-2 flex-1">
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 px-2"
+                                className="h-7 px-1 sm:px-2 flex-shrink-0"
                                 onClick={() => handleUpdateMaxSpeakTime(index, Math.max(10, (step.maxSpeakTime || 60) - 10))}
                               >
                                 <Minus className="h-3 w-3" />
@@ -500,13 +501,13 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                                 type="text"
                                 value={formatTime(step.maxSpeakTime || 60)}
                                 onChange={(e) => handleMaxSpeakTimeInputChange(index, e.target.value)}
-                                className="w-20 text-center h-7 px-2"
+                                className="w-16 sm:w-20 text-center h-7 px-1 sm:px-2"
                               />
 
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 px-2"
+                                className="h-7 px-1 sm:px-2 flex-shrink-0"
                                 onClick={() => handleUpdateMaxSpeakTime(index, (step.maxSpeakTime || 60) + 10)}
                               >
                                 <Plus className="h-3 w-3" />
@@ -518,7 +519,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-gray-500 hover:text-red-500"
+                          className="text-gray-500 hover:text-red-500 flex-shrink-0"
                           onClick={() => handleRemoveStep(index)}
                         >
                           <Minus className="h-4 w-4" />
@@ -533,7 +534,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
           </Droppable>
         </DragDropContext>
 
-        <div className="mt-4 flex justify-center">
+        <div className="mt-3 sm:mt-4 flex justify-center">
           <Button
             variant="outline"
             className="w-full text-gray-600 border-dashed"
@@ -544,88 +545,89 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
           </Button>
         </div>
 
+        {/* 순서 추가 버튼 그리드 레이아웃 최적화 */}
         {showAddStepModal && (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="mt-3 sm:mt-4 grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-2 max-h-[40vh] overflow-y-auto">
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("입론")}
             >
               입론
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("기조발언")}
             >
               기조발언
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("반론")}
             >
               반론
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("자유토론")}
             >
               자유토론
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("교차질의")}
             >
               교차질의
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("숙의시간")}
             >
               숙의시간
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("마무리 발언")}
             >
               마무리 발언
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("사회자 인사")}
             >
               사회자 인사
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("청중 사전 투표")}
             >
               청중 사전 투표
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("청중 질문")}
             >
               청중 질문
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("패널 질문")}
             >
               패널 질문
             </Button>
             <Button
               variant="outline"
-              className="text-sm"
+              className="text-sm h-9"
               onClick={() => handleAddStep("결과 발표")}
             >
               결과 발표
@@ -634,10 +636,10 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         )}
       </div>
 
-      {/* 토론자 설정 섹션 수정 - 높이 제한과 스크롤 추가 */}
-      <div className="bg-white rounded-lg p-6 border shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center">
+      {/* 토론자 설정 섹션 - 모바일 앱 최적화 */}
+      <div className="bg-white rounded-lg p-3 sm:p-6 border shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <h3 className="text-base sm:text-lg font-semibold flex items-center">
             <Users className="mr-2 h-5 w-5" />
             토론자 설정
           </h3>
@@ -651,11 +653,11 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         </div>
 
         {enableDebaters && (
-          <div className="space-y-6 max-h-80 overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4 sm:space-y-6 max-h-60 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-base font-medium text-blue-700 flex items-center">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <h4 className="text-sm sm:text-base font-medium text-blue-700 flex items-center">
                     <User className="mr-2 h-4 w-4" />
                     찬성팀
                   </h4>
@@ -682,11 +684,11 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                 <div className="space-y-2">
                   {Array.from({ length: affirmativeCount }).map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <div className="w-14 text-sm font-medium text-gray-500">찬성 {i+1}</div>
+                      <div className="w-14 text-xs sm:text-sm font-medium text-gray-500">찬성 {i+1}</div>
                       <Input 
                         value={debaterNames[i] || ""}
                         onChange={(e) => handleDebaterNameChange(i, e.target.value)}
-                        className="flex-1"
+                        className="flex-1 h-8 sm:h-9 text-sm"
                         placeholder={`찬성 ${i+1} 이름`}
                       />
                     </div>
@@ -695,8 +697,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
               </div>
               
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-base font-medium text-orange-700 flex items-center">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <h4 className="text-sm sm:text-base font-medium text-orange-700 flex items-center">
                     <User className="mr-2 h-4 w-4" />
                     반대팀
                   </h4>
@@ -723,11 +725,11 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                 <div className="space-y-2">
                   {Array.from({ length: negativeCount }).map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <div className="w-14 text-sm font-medium text-gray-500">반대 {i+1}</div>
+                      <div className="w-14 text-xs sm:text-sm font-medium text-gray-500">반대 {i+1}</div>
                       <Input 
                         value={debaterNames[affirmativeCount + i] || ""}
                         onChange={(e) => handleDebaterNameChange(affirmativeCount + i, e.target.value)}
-                        className="flex-1"
+                        className="flex-1 h-8 sm:h-9 text-sm"
                         placeholder={`반대 ${i+1} 이름`}
                       />
                     </div>
@@ -739,7 +741,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
         )}
       </div>
 
-      <Button className="w-full text-lg py-6" onClick={handleStartDebate} size="lg">
+      {/* 토론 시작 버튼 - 고정된 높이로 수정 */}
+      <Button className="w-full h-12 sm:h-14 text-base sm:text-lg py-2 sm:py-3" onClick={handleStartDebate} size="lg">
         토론 시작하기
         <ChevronRight className="ml-2 h-5 w-5" />
       </Button>
