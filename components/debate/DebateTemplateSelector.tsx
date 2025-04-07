@@ -41,7 +41,7 @@ export function DebateTemplateSelector({ templates, onSelectTemplate }: DebateTe
           affirmativeCount: 2,
           negativeCount: 2,
           templateName: `${variant.name} ${baseTemplate.name}`,
-          enableDebaters: true,
+          enableDebaters: false,
           university: variant.university,
         })
       );
@@ -49,6 +49,16 @@ export function DebateTemplateSelector({ templates, onSelectTemplate }: DebateTe
       // 토론 페이지로 이동
       router.push("/debate");
     }
+  };
+
+  // 변형 ID에서 기본 템플릿 ID 결정 함수
+  const getBaseTemplateId = (variantId: string) => {
+    if (variantId.includes('free-debate')) return 'free-debate';
+    if (variantId.includes('seda-debate')) return 'seda-debate';
+    if (variantId.includes('oxford-debate')) return 'oxford-debate';
+    if (variantId.includes('spar-debate')) return 'spar-debate';
+    if (variantId.includes('fishbowl-debate')) return 'fishbowl-debate';
+    return 'seda-debate'; // 기본값으로 세다 토론 사용
   };
 
   return (
@@ -87,7 +97,7 @@ export function DebateTemplateSelector({ templates, onSelectTemplate }: DebateTe
             <Card 
               key={variant.id}
               className="cursor-pointer border transition-all duration-300 hover:border-primary/50 hover:shadow-md"
-              onClick={() => handleStartSchoolVariant(variant, variant.id.includes('free-debate') ? 'free-debate' : 'seda-debate')}
+              onClick={() => handleStartSchoolVariant(variant, getBaseTemplateId(variant.id))}
             >
               <CardContent className="p-3">
                 <div className="flex items-start gap-3">

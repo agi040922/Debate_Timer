@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Home, Volume2, VolumeX, ZapOff, Zap, Info, X, AlertCircle } from "lucide-react"
+import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Home, Volume2, VolumeX, ZapOff, Zap, Info, X, AlertCircle, Minus, Plus, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Users } from "lucide-react"
@@ -40,6 +40,8 @@ export default function DebatePage() {
   const [activeSpeakingTeam, setActiveSpeakingTeam] = useState<"찬성" | "반대" | "긍정" | "부정" | null>(null)
   const [showGuide, setShowGuide] = useState(false)
   const [showTimeEndAlert, setShowTimeEndAlert] = useState<{show: boolean, message: string}>({show: false, message: ""})
+  const [timeEditMode, setTimeEditMode] = useState(false)
+  const [showDebateEndModal, setShowDebateEndModal] = useState(false)
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -273,6 +275,13 @@ export default function DebatePage() {
 
   // Handle step change
   const handleStepChange = (index: number) => {
+    // 마지막 단계에서 다음 단계를 누르면 토론 종료 모달 표시
+    if (index >= steps.length) {
+      setIsRunning(false)
+      setShowDebateEndModal(true)
+      return
+    }
+
     if (index < 0 || index >= steps.length) return
 
     // Stop timer
@@ -492,8 +501,17 @@ export default function DebatePage() {
         {/* Free debate info */}
         {currentStep?.type === "자유토론" && (
           <div className="w-full">
-            {/* 자유토론 가이드 버튼 */}
-            <div className="flex justify-end mb-2">
+            {/* 자유토론 가이드 버튼과 오류수정 버튼 */}
+            <div className="flex justify-between mb-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className={`text-xs h-7 ${timeEditMode ? 'bg-red-50 text-red-600 border-red-300' : ''}`}
+                onClick={() => setTimeEditMode(!timeEditMode)}
+              >
+                {timeEditMode ? "수정 완료" : "시간 오류 수정"}
+              </Button>
+              
               <div className="relative">
                 <Button 
                   variant="ghost" 
@@ -547,10 +565,23 @@ export default function DebatePage() {
                 <div className={`text-2xl font-bold ${getTeamColor(activeSpeakingTeam)}`}>
                   {activeSpeakingTeam}팀 {formatTime(speakerTimeRemaining)}
                 </div>
+                {/* 팀 남은 시간과 최대 발언 시간 중 작은 값을 사용하여 진행률 계산 */}
                 <Progress
-                  value={calculateProgress(speakerTimeRemaining, currentStep?.maxSpeakTime || 1)}
+                  value={calculateProgress(
+                    speakerTimeRemaining,
+                    Math.min(
+                      teamRemainingTime[activeSpeakingTeam] || 0,
+                      currentStep?.maxSpeakTime || 1
+                    )
+                  )}
                   className={`w-full h-1 mt-1 ${getTeamBgColor(activeSpeakingTeam)}`}
                 />
+                {/* 팀 시간이 최대 발언 시간보다 적을 경우 알림 표시 */}
+                {(teamRemainingTime[activeSpeakingTeam] || 0) < (currentStep?.maxSpeakTime || 0) && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    팀 시간 제한으로 {formatTime(teamRemainingTime[activeSpeakingTeam] || 0)} 남음
+                  </div>
+                )}
               </div>
             )}
 
@@ -563,9 +594,11 @@ export default function DebatePage() {
                     : "border-gray-200 hover:border-blue-300"
                 }`}
                 onClick={() => {
-                  // 현재 설정된 팀 타입 확인 (긍정/찬성)
-                  const positiveTeam = isPositiveTeam(steps) ? "긍정" : "찬성";
-                  handleTeamSpeaking(positiveTeam);
+                  if (!timeEditMode) {
+                    // 현재 설정된 팀 타입 확인 (긍정/찬성)
+                    const positiveTeam = isPositiveTeam(steps) ? "긍정" : "찬성";
+                    handleTeamSpeaking(positiveTeam);
+                  }
                 }}
               >
                 <div className="font-medium mb-1">
@@ -585,6 +618,47 @@ export default function DebatePage() {
                   )} 
                   className="w-full h-3" 
                 />
+                
+                {/* 오류수정 모드일 때만 표시되는 시간 조정 버튼 */}
+                {timeEditMode && (
+                  <div className="flex justify-center items-center gap-4 mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => {
+                        setTeamRemainingTime(prev => {
+                          const team = isPositiveTeam(steps) ? "긍정" : "찬성";
+                          const currentTime = prev[team] || 0;
+                          return {
+                            ...prev,
+                            [team]: Math.max(0, currentTime - 10)
+                          };
+                        });
+                      }}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => {
+                        setTeamRemainingTime(prev => {
+                          const team = isPositiveTeam(steps) ? "긍정" : "찬성";
+                          const currentTime = prev[team] || 0;
+                          const maxTime = currentStep?.time ? currentStep.time / 2 : 0;
+                          return {
+                            ...prev,
+                            [team]: Math.min(maxTime, currentTime + 10)
+                          };
+                        });
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div 
@@ -594,9 +668,11 @@ export default function DebatePage() {
                     : "border-gray-200 hover:border-orange-300"
                 }`}
                 onClick={() => {
-                  // 현재 설정된 팀 타입 확인 (부정/반대)
-                  const negativeTeam = isNegativeTeam(steps) ? "부정" : "반대";
-                  handleTeamSpeaking(negativeTeam);
+                  if (!timeEditMode) {
+                    // 현재 설정된 팀 타입 확인 (부정/반대)
+                    const negativeTeam = isNegativeTeam(steps) ? "부정" : "반대";
+                    handleTeamSpeaking(negativeTeam);
+                  }
                 }}
               >
                 <div className="font-medium mb-1">
@@ -616,6 +692,47 @@ export default function DebatePage() {
                   )} 
                   className="w-full h-3" 
                 />
+                
+                {/* 오류수정 모드일 때만 표시되는 시간 조정 버튼 */}
+                {timeEditMode && (
+                  <div className="flex justify-center items-center gap-4 mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => {
+                        setTeamRemainingTime(prev => {
+                          const team = isNegativeTeam(steps) ? "부정" : "반대";
+                          const currentTime = prev[team] || 0;
+                          return {
+                            ...prev,
+                            [team]: Math.max(0, currentTime - 10)
+                          };
+                        });
+                      }}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => {
+                        setTeamRemainingTime(prev => {
+                          const team = isNegativeTeam(steps) ? "부정" : "반대";
+                          const currentTime = prev[team] || 0;
+                          const maxTime = currentStep?.time ? currentStep.time / 2 : 0;
+                          return {
+                            ...prev,
+                            [team]: Math.min(maxTime, currentTime + 10)
+                          };
+                        });
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
             
@@ -722,12 +839,94 @@ export default function DebatePage() {
           variant="outline"
           className="w-32"
           onClick={() => handleStepChange(currentStepIndex + 1)}
-          disabled={currentStepIndex === steps.length - 1}
+          disabled={false}
         >
-          다음 단계
-          <ChevronRight className="ml-2 h-4 w-4" />
+          {currentStepIndex === steps.length - 1 ? (
+            <>
+              토론 종료
+              <Check className="ml-2 h-4 w-4" />
+            </>
+          ) : (
+            <>
+              다음 단계
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </>
+          )}
         </Button>
       </div>
+
+      {/* 토론 종료 모달 */}
+      {showDebateEndModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4 text-center">토론이 끝났습니다</h3>
+            
+            {/* 토론자 활성화 상태인 경우 토론 시간 측정 결과 표시 */}
+            {enableDebaters && debaters.length > 2 && (
+              <div className="mb-6">
+                <h4 className="font-medium mb-3 text-center text-gray-700">토론자 발언 시간</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <h5 className="text-sm font-medium text-blue-700">
+                      {isPositiveTeam(steps) ? "긍정팀" : "찬성팀"}
+                    </h5>
+                    {debaters
+                      .filter(d => d.team === "찬성" || d.team === "긍정")
+                      .sort((a, b) => b.totalSpeakTime - a.totalSpeakTime)
+                      .map((debater) => (
+                        <div key={debater.id} className="flex items-center justify-between bg-blue-50 p-2 rounded-md">
+                          <span className="text-sm">{debater.name}</span>
+                          <span className="text-sm font-medium text-blue-700">
+                            {formatTime(debater.totalSpeakTime)}
+                          </span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h5 className="text-sm font-medium text-orange-700">
+                      {isNegativeTeam(steps) ? "부정팀" : "반대팀"}
+                    </h5>
+                    {debaters
+                      .filter(d => d.team === "반대" || d.team === "부정")
+                      .sort((a, b) => b.totalSpeakTime - a.totalSpeakTime)
+                      .map((debater) => (
+                        <div key={debater.id} className="flex items-center justify-between bg-orange-50 p-2 rounded-md">
+                          <span className="text-sm">{debater.name}</span>
+                          <span className="text-sm font-medium text-orange-700">
+                            {formatTime(debater.totalSpeakTime)}
+                          </span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex justify-center gap-3">
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  setShowDebateEndModal(false)
+                  router.push("/")
+                }}
+                className="w-28"
+              >
+                홈으로
+              </Button>
+              <Button 
+                onClick={() => setShowDebateEndModal(false)}
+                className="w-28"
+              >
+                닫기
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
