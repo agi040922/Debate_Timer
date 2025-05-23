@@ -3,6 +3,7 @@
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { DebateTemplate, DebateStep } from "@/lib/types/debate"
+import { supabase } from '@/lib/supabaseClient';
 import { debateTemplates } from "@/lib/debate-templates"
 import { schoolVariants } from "@/lib/school-variants"
 import { DebateTemplateSelector } from "@/components/debate/DebateTemplateSelector"
@@ -19,6 +20,7 @@ debateTemplates.forEach(template => {
 export default function Home() {
   const router = useRouter()
   const [selectedTemplate, setSelectedTemplate] = useState<DebateTemplate | null>(null)
+  const [isLoading, setIsLoading] = useState(false);
 
   // 템플릿 선택 처리
   const handleSelectTemplate = (template: DebateTemplate) => {
@@ -26,10 +28,114 @@ export default function Home() {
   }
 
   // 토론 시작 처리
-  const handleStartDebate = (config: DebateConfig) => {
-    // 토론 설정을 localStorage에 저장
-    localStorage.setItem("debateConfig", JSON.stringify(config))
-    router.push("/debate")
+  const handleStartDebate = async (config: DebateConfig) => {
+    setIsLoading(true);
+
+    // Helper to determine actual team names based on steps
+    const getTeamNames = (steps: DebateStep[]): { positiveTeam: "긍정" | "찬성", negativeTeam: "부정" | "반대" } => {
+      const hasPositiveTeamStep = steps.some(step => step.team === "긍정");
+      const hasNegativeTeamStep = steps.some(step => step.team === "부정");
+      return {
+        positiveTeam: hasPositiveTeamStep ? "긍정" : "찬성",
+        negativeTeam: hasNegativeTeamStep ? "부정" : "반대",
+      };
+    };
+
+    // Local Debater interface for initializing live_state
+    interface InitialDebater {
+      id: string;
+      name: string;
+      team: "찬성" | "반대" | "긍정" | "부정";
+      totalSpeakTime: number;
+      isSpeaking: boolean;
+    }
+
+    const initialDebaters: InitialDebater[] = [];
+    const { positiveTeam, negativeTeam } = getTeamNames(config.steps);
+
+    if (config.enableDebaters) {
+      for (let i = 0; i < config.affirmativeCount; i++) {
+        initialDebaters.push({
+          id: `aff-${i}`,
+          name: config.debaterNames?.[i] || `${positiveTeam}${i + 1}`,
+          team: positiveTeam,
+          totalSpeakTime: 0,
+          isSpeaking: false,
+        });
+      }
+      for (let i = 0; i < config.negativeCount; i++) {
+        initialDebaters.push({
+          id: `neg-${i}`,
+          name: config.debaterNames?.[config.affirmativeCount + i] || `${negativeTeam}${i + 1}`,
+          team: negativeTeam,
+          totalSpeakTime: 0,
+          isSpeaking: false,
+        });
+      }
+    } else {
+      // Add dummy debaters for team time tracking if debaters are not enabled
+      initialDebaters.push({ id: `aff-team`, name: `${positiveTeam}팀`, team: positiveTeam, totalSpeakTime: 0, isSpeaking: false });
+      initialDebaters.push({ id: `neg-team`, name: `${negativeTeam}팀`, team: negativeTeam, totalSpeakTime: 0, isSpeaking: false });
+    }
+
+    const firstStepTime = config.steps.length > 0 ? config.steps[0].time : 0;
+    const freeDebateStep = config.steps.find(step => step.type === "자유토론");
+    const initialTeamRemainingTime = {
+      [positiveTeam]: freeDebateStep ? freeDebateStep.time / 2 : 0,
+      [negativeTeam]: freeDebateStep ? freeDebateStep.time / 2 : 0,
+    };
+     // Ensure specific team keys if they are fixed e.g. "찬성", "반대"
+    if (positiveTeam === "찬성") initialTeamRemainingTime["긍정"] = 0;
+    if (negativeTeam === "반대") initialTeamRemainingTime["부정"] = 0;
+    if (positiveTeam === "긍정") initialTeamRemainingTime["찬성"] = 0;
+    if (negativeTeam === "부정") initialTeamRemainingTime["반대"] = 0;
+
+
+    const initialLiveState = {
+      currentStepIndex: 0,
+      remainingTime: firstStepTime,
+      isRunning: false,
+      debaters: initialDebaters,
+      currentSpeakerId: null,
+      speakerTimeRemaining: 0,
+      teamRemainingTime: initialTeamRemainingTime,
+      activeSpeakingTeam: null,
+      showDebateEndModal: false,
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('active_debates')
+        .insert([
+          { 
+            initial_config: config, 
+            template_name: config.templateName,
+            live_state: initialLiveState 
+          }
+        ])
+        .select('id')
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        // No longer need to set localStorage as primary source of truth
+        // localStorage.setItem("debateConfig", JSON.stringify(config)); 
+        router.push(`/debate/${data.id}`);
+      } else {
+        console.error("No data returned from Supabase after insert");
+        alert("Failed to start debate. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error starting debate:", error);
+      // localStorage.setItem("debateConfig", JSON.stringify(config)); // Removed: No longer using localStorage as a fallback for config.
+      alert(`Error starting debate: ${error.message || 'Unknown error'}. Please check your Supabase setup and network, then try again.`);
+      // router.push("/debate"); // Removed: Do not redirect to old localStorage-dependent page on Supabase failure.
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -107,6 +213,7 @@ export default function Home() {
               selectedTemplate={selectedTemplate}
               onBackToTemplates={() => setSelectedTemplate(null)}
               onStartDebate={handleStartDebate}
+              isLoading={isLoading}
             />
           )}
         </div>

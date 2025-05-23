@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Home, Volume2, VolumeX, ZapOff, Zap, Info, X, AlertCircle, Minus, Plus, Check } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation" // Import useParams
 import Link from "next/link"
 import { Users } from "lucide-react"
 import { DebateStep, DebateStepType, DebateTeam } from "@/lib/types/debate"
+import { supabase } from '@/lib/supabaseClient'; // Import Supabase client
+import { toast } from "sonner"; // Import toast for notifications
 
 // Define debater interface
 interface Debater {
@@ -21,6 +23,9 @@ interface Debater {
 
 export default function DebatePage() {
   const router = useRouter()
+  const params = useParams(); // Get route parameters
+  const debateId = params?.debateId as string; // Extract debateId
+
   const [steps, setSteps] = useState<DebateStep[]>([])
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [remainingTime, setRemainingTime] = useState(0)
@@ -51,343 +56,518 @@ export default function DebatePage() {
     return steps.some(step => step.team === teamType);
   }
 
-  // Load debate configuration from localStorage
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+
+  // Define LiveState interface (consistent with what's stored in Supabase)
+  interface LiveState {
+    currentStepIndex: number;
+    remainingTime: number;
+    isRunning: boolean;
+    debaters: Debater[];
+    currentSpeakerId: string | null;
+    speakerTimeRemaining: number;
+    teamRemainingTime: { [key: string]: number }; // Ensure keys like "찬성", "긍정" etc. are covered
+    activeSpeakingTeam: "찬성" | "반대" | "긍정" | "부정" | null; // More specific type
+    showDebateEndModal: boolean;
+  }
+  
+  // Helper function to get team names (can be defined outside or passed if needed)
+  const getTeamNamesFromSteps = (stepsToAnalyze: DebateStep[]): { positiveTeam: "긍정" | "찬성", negativeTeam: "부정" | "반대" } => {
+    const hasPositiveTeamStep = stepsToAnalyze.some(step => step.team === "긍정");
+    const hasNegativeTeamStep = stepsToAnalyze.some(step => step.team === "부정");
+    return {
+      positiveTeam: hasPositiveTeamStep ? "긍정" : "찬성",
+      negativeTeam: hasNegativeTeamStep ? "부정" : "반대",
+    };
+  };
+
+  // Function to update live state in Supabase
+  const updateLiveStateInSupabase = async (newStatePart: Partial<LiveState>) => {
+    if (!debateId || !isInitialLoadComplete || !isSubscribed) {
+      console.log("Update skipped: Not ready or not subscribed", { debateId, isInitialLoadComplete, isSubscribed });
+      return; 
+    }
+
+    // Create the full state object for update.
+    // This ensures we're always sending the complete live_state structure.
+    const currentLiveStateForUpdate: LiveState = {
+      currentStepIndex,
+      remainingTime,
+      isRunning,
+      debaters,
+      currentSpeakerId: currentSpeaker ? currentSpeaker.id : null,
+      speakerTimeRemaining,
+      teamRemainingTime,
+      activeSpeakingTeam,
+      showDebateEndModal,
+    };
+    
+    const finalStateToUpdate = { ...currentLiveStateForUpdate, ...newStatePart };
+
+    try {
+      // console.log("Attempting to update live_state in Supabase with:", finalStateToUpdate);
+      const { error } = await supabase
+        .from('active_debates')
+        .update({ live_state: finalStateToUpdate })
+        .eq('id', debateId);
+      if (error) {
+        console.error("Error updating live state in Supabase:", error);
+        toast.error("Failed to sync debate state. Please check your connection or try again.", {
+          description: error.message,
+        });
+        throw error; // Re-throw if other parts of the app need to react
+      }
+      // console.log("Successfully updated live_state in Supabase for debate:", debateId);
+    } catch (error) {
+      // Error already logged and toasted if it's a Supabase error.
+      // If it's a different error source, log it here.
+      if (!(error.message && error.message.includes("Failed to sync debate state"))) {
+         console.error("An unexpected error occurred in updateLiveStateInSupabase:", error);
+      }
+      // No need to re-toast if already handled, unless providing a more generic message.
+    }
+  };
+
+  // Load initial_config and live_state from Supabase
   useEffect(() => {
-    const debateConfig = localStorage.getItem("debateConfig")
-    if (!debateConfig) {
-      router.push("/")
-      return
-    }
+    if (!debateId) return;
 
-    const config = JSON.parse(debateConfig)
-    setSteps(config.steps)
-    setTemplateName(config.templateName)
-    setEnableDebaters(config.enableDebaters)
+    const fetchInitialData = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('active_debates')
+          .select('initial_config, template_name, live_state')
+          .eq('id', debateId)
+          .single();
 
-    // Initialize remaining time for the first step
-    if (config.steps.length > 0) {
-      setRemainingTime(config.steps[0].time)
-    }
+        if (error) throw error;
 
-    // Initialize debaters
-    const newDebaters: Debater[] = []
-    if (config.enableDebaters) {
-      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
-      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
-      const hasNegativeTeam = hasTeamType(config.steps, "부정");
-      
-      const positiveTeam = hasPositiveTeam ? "긍정" : "찬성";
-      const negativeTeam = hasNegativeTeam ? "부정" : "반대";
-      
-      for (let i = 0; i < config.affirmativeCount; i++) {
-        newDebaters.push({
-          id: `aff-${i}`,
-          name: config.debaterNames && config.debaterNames[i] ? config.debaterNames[i] : `${positiveTeam}${i + 1}`,
-          team: positiveTeam as "찬성" | "반대" | "긍정" | "부정",
-          totalSpeakTime: 0,
-          isSpeaking: false,
-        })
+        if (data) {
+          const config = data.initial_config;
+          const fetchedLiveState = data.live_state as LiveState | null;
+
+          setSteps(config.steps); // This comes from initial_config, assumed static
+          setTemplateName(data.template_name); // Also from initial_config
+          setEnableDebaters(config.enableDebaters); // From initial_config
+
+          if (fetchedLiveState) {
+            console.log("Initializing state from fetched live_state:", fetchedLiveState);
+            setCurrentStepIndex(fetchedLiveState.currentStepIndex);
+            setRemainingTime(fetchedLiveState.remainingTime);
+            setIsRunning(fetchedLiveState.isRunning);
+            setDebaters(fetchedLiveState.debaters);
+            if (fetchedLiveState.currentSpeakerId) {
+              const speaker = fetchedLiveState.debaters.find(d => d.id === fetchedLiveState.currentSpeakerId);
+              setCurrentSpeaker(speaker || null);
+            } else {
+              setCurrentSpeaker(null);
+            }
+            setSpeakerTimeRemaining(fetchedLiveState.speakerTimeRemaining);
+            setTeamRemainingTime(fetchedLiveState.teamRemainingTime);
+            setActiveSpeakingTeam(fetchedLiveState.activeSpeakingTeam);
+            setShowDebateEndModal(fetchedLiveState.showDebateEndModal);
+          } else {
+            // This block is a fallback if live_state was not initialized by app/page.tsx
+            // It should ideally not be hit if step 2 of the plan was successful.
+            console.log("live_state is null, initializing from initial_config");
+            if (config.steps.length > 0) {
+              setRemainingTime(config.steps[0].time);
+            }
+            const newDebaters: Debater[] = [];
+            const { positiveTeam, negativeTeam } = getTeamNamesFromSteps(config.steps);
+            if (config.enableDebaters) {
+              for (let i = 0; i < config.affirmativeCount; i++) {
+                newDebaters.push({
+                  id: `aff-${i}`, name: config.debaterNames?.[i] || `${positiveTeam}${i + 1}`,
+                  team: positiveTeam, totalSpeakTime: 0, isSpeaking: false,
+                });
+              }
+              for (let i = 0; i < config.negativeCount; i++) {
+                newDebaters.push({
+                  id: `neg-${i}`, name: config.debaterNames?.[config.affirmativeCount + i] || `${negativeTeam}${i + 1}`,
+                  team: negativeTeam, totalSpeakTime: 0, isSpeaking: false,
+                });
+              }
+            } else {
+              newDebaters.push({ id: `aff-team`, name: `${positiveTeam}팀`, team: positiveTeam, totalSpeakTime: 0, isSpeaking: false });
+              newDebaters.push({ id: `neg-team`, name: `${negativeTeam}팀`, team: negativeTeam, totalSpeakTime: 0, isSpeaking: false });
+            }
+            setDebaters(newDebaters);
+
+            const freeDebateStep = config.steps.find((step: DebateStep) => step.type === "자유토론");
+            const initialTeamTimes = { 찬성: 0, 반대: 0, 긍정: 0, 부정: 0 };
+            if (freeDebateStep) {
+                initialTeamTimes[positiveTeam] = freeDebateStep.time / 2;
+                initialTeamTimes[negativeTeam] = freeDebateStep.time / 2;
+            }
+            setTeamRemainingTime(initialTeamTimes);
+            // After setting up from initial_config, immediately push this as the first live_state
+            const initialLiveStateFromConfig: LiveState = {
+              currentStepIndex: 0,
+              remainingTime: config.steps.length > 0 ? config.steps[0].time : 0,
+              isRunning: false,
+              debaters: newDebaters,
+              currentSpeakerId: null,
+              speakerTimeRemaining: 0,
+              teamRemainingTime: initialTeamTimes,
+              activeSpeakingTeam: null,
+              showDebateEndModal: false,
+            };
+            // updateLiveStateInSupabase(initialLiveStateFromConfig); // This might cause issues if subscription is not ready. Better to let user interaction trigger first update.
+          }
+          setIsInitialLoadComplete(true);
+        } else {
+          console.error("Debate not found for ID:", debateId);
+          alert("Debate session not found. Redirecting to home.");
+          router.push("/");
+        }
+      } catch (error) {
+        console.error("Error fetching debate data:", error);
+        alert("Error loading debate. Redirecting to home.");
+        router.push("/");
       }
-      for (let i = 0; i < config.negativeCount; i++) {
-        newDebaters.push({
-          id: `neg-${i}`,
-          name: config.debaterNames && config.debaterNames[config.affirmativeCount + i] 
-            ? config.debaterNames[config.affirmativeCount + i] 
-            : `${negativeTeam}${i + 1}`,
-          team: negativeTeam as "찬성" | "반대" | "긍정" | "부정",
-          totalSpeakTime: 0,
-          isSpeaking: false,
-        })
-      }
-    } else {
-      // 토론자 설정이 비활성화되어 있어도 팀 시간 조절을 위한 더미 토론자 추가
-      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
-      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
-      const hasNegativeTeam = hasTeamType(config.steps, "부정");
-      
-      const positiveTeam = hasPositiveTeam ? "긍정" : "찬성";
-      const negativeTeam = hasNegativeTeam ? "부정" : "반대";
-      
-      newDebaters.push({
-        id: `aff-team`,
-        name: `${positiveTeam}팀`,
-        team: positiveTeam as "찬성" | "반대" | "긍정" | "부정",
-        totalSpeakTime: 0,
-        isSpeaking: false,
-      })
-      newDebaters.push({
-        id: `neg-team`,
-        name: `${negativeTeam}팀`,
-        team: negativeTeam as "찬성" | "반대" | "긍정" | "부정",
-        totalSpeakTime: 0,
-        isSpeaking: false,
-      })
-    }
-    setDebaters(newDebaters)
+    };
 
-    // Initialize team remaining time for free debate
-    const freeDebateStep = config.steps.find((step: DebateStep) => step.type === "자유토론")
-    if (freeDebateStep) {
-      // 팀 타입 확인 (긍정/부정 또는 찬성/반대)
-      const hasPositiveTeam = hasTeamType(config.steps, "긍정");
-      const hasNegativeTeam = hasTeamType(config.steps, "부정");
-      
-      setTeamRemainingTime({
-        찬성: hasPositiveTeam ? 0 : freeDebateStep.time / 2,
-        반대: hasNegativeTeam ? 0 : freeDebateStep.time / 2,
-        긍정: hasPositiveTeam ? freeDebateStep.time / 2 : 0,
-        부정: hasNegativeTeam ? freeDebateStep.time / 2 : 0,
+    fetchInitialData();
+    audioRef.current = new Audio("/beep.mp3");
+  }, [debateId, router]);
+
+  // Supabase real-time subscription
+  useEffect(() => {
+    if (!debateId || !isInitialLoadComplete) return;
+
+    const channel = supabase
+      .channel(`debate-${debateId}-live-state`)
+      .on<LiveState>(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'active_debates', 
+          filter: `id=eq.${debateId}` 
+        },
+        (payload) => {
+          // console.log('Received Supabase payload:', payload);
+          const newLiveState = payload.new as { live_state: LiveState };
+          if (newLiveState && newLiveState.live_state) {
+            const incoming = newLiveState.live_state;
+            // console.log('Incoming live_state:', incoming);
+
+            if (incoming.currentStepIndex !== currentStepIndexRef.current) setCurrentStepIndex(incoming.currentStepIndex);
+            if (incoming.remainingTime !== remainingTimeRef.current) setRemainingTime(incoming.remainingTime);
+            if (incoming.isRunning !== isRunningRef.current) setIsRunning(incoming.isRunning);
+            if (JSON.stringify(incoming.debaters) !== JSON.stringify(debatersRef.current)) setDebaters(incoming.debaters);
+            
+            const newCurrentSpeaker = incoming.currentSpeakerId 
+              ? incoming.debaters.find(d => d.id === incoming.currentSpeakerId) || null
+              : null;
+            if ((currentSpeakerRef.current?.id || null) !== (newCurrentSpeaker?.id || null)) setCurrentSpeaker(newCurrentSpeaker);
+
+            if (incoming.speakerTimeRemaining !== speakerTimeRemainingRef.current) setSpeakerTimeRemaining(incoming.speakerTimeRemaining);
+            if (JSON.stringify(incoming.teamRemainingTime) !== JSON.stringify(teamRemainingTimeRef.current)) setTeamRemainingTime(incoming.teamRemainingTime);
+            if (incoming.activeSpeakingTeam !== activeSpeakingTeamRef.current) setActiveSpeakingTeam(incoming.activeSpeakingTeam);
+            if (incoming.showDebateEndModal !== showDebateEndModalRef.current) setShowDebateEndModal(incoming.showDebateEndModal);
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Subscribed to live updates for debate:', debateId);
+          setIsSubscribed(true);
+        } else {
+          setIsSubscribed(false);
+          if (err) console.error('Subscription error:', err);
+        }
       });
-    }
 
-    // Initialize audio
-    audioRef.current = new Audio("/beep.mp3")
-  }, [router])
+    return () => {
+      console.log("Removing channel subscription for debate:", debateId);
+      supabase.removeChannel(channel).then(() => setIsSubscribed(false));
+    };
+  }, [debateId, isInitialLoadComplete]);
+  
+  // Refs for state values to use in subscription callback to avoid stale closures
+  const currentStepIndexRef = useRef(currentStepIndex);
+  const remainingTimeRef = useRef(remainingTime);
+  const isRunningRef = useRef(isRunning);
+  const debatersRef = useRef(debaters);
+  const currentSpeakerRef = useRef(currentSpeaker);
+  const speakerTimeRemainingRef = useRef(speakerTimeRemaining);
+  const teamRemainingTimeRef = useRef(teamRemainingTime);
+  const activeSpeakingTeamRef = useRef(activeSpeakingTeam);
+  const showDebateEndModalRef = useRef(showDebateEndModal);
+
+  useEffect(() => { currentStepIndexRef.current = currentStepIndex; }, [currentStepIndex]);
+  useEffect(() => { remainingTimeRef.current = remainingTime; }, [remainingTime]);
+  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => { debatersRef.current = debaters; }, [debaters]);
+  useEffect(() => { currentSpeakerRef.current = currentSpeaker; }, [currentSpeaker]);
+  useEffect(() => { speakerTimeRemainingRef.current = speakerTimeRemaining; }, [speakerTimeRemaining]);
+  useEffect(() => { teamRemainingTimeRef.current = teamRemainingTime; }, [teamRemainingTime]);
+  useEffect(() => { activeSpeakingTeamRef.current = activeSpeakingTeam; }, [activeSpeakingTeam]);
+  useEffect(() => { showDebateEndModalRef.current = showDebateEndModal; }, [showDebateEndModal]);
+
 
   // Timer effect
   useEffect(() => {
-    if (isRunning) {
+    if (isRunningRef.current && isInitialLoadComplete) { // Use ref for isRunning check
       timerRef.current = setInterval(() => {
-        // 자유토론에서 발언자/팀이 선택되지 않았다면 타이머 작동 안함
-        const isFreeDabate = steps[currentStepIndex]?.type === "자유토론";
-        const noSpeakerSelected = isFreeDabate && !activeSpeakingTeam && !currentSpeaker;
+        const currentStepForTimer = steps[currentStepIndexRef.current];
+        const isFreeDebate = currentStepForTimer?.type === "자유토론";
+        const noSpeakerSelected = isFreeDebate && !activeSpeakingTeamRef.current && !currentSpeakerRef.current;
         
-        if (isFreeDabate && noSpeakerSelected) {
-          // 자유토론이고 발언자/팀이 선택되지 않았으면 타이머가 진행되지 않음
-          return;
+        if (isFreeDebate && noSpeakerSelected) {
+          return; // Timer doesn't run if free debate and no speaker selected
         }
 
-        setRemainingTime((prev) => {
+        let newRemainingTimeLocal = 0;
+        setRemainingTime(prev => {
+          newRemainingTimeLocal = prev - 1;
           if (prev <= 1) {
-            // Time's up for current step
-            clearInterval(timerRef.current!)
-            setIsRunning(false)
-            if (soundEnabled) {
-              audioRef.current?.play()
-            }
-            
-            // 타이머 종료 알림 표시
+            clearInterval(timerRef.current!);
+            if (soundEnabled) audioRef.current?.play();
             setShowTimeEndAlert({
               show: true, 
-              message: currentStep?.team 
-                ? `${currentStep.type} (${currentStep.team}) 시간이 종료되었습니다.`
-                : `${currentStep?.type} 시간이 종료되었습니다.`
-            })
+              message: currentStepForTimer?.team 
+                ? `${currentStepForTimer.type} (${currentStepForTimer.team}) 시간이 종료되었습니다.`
+                : `${currentStepForTimer?.type || '현재 단계'} 시간이 종료되었습니다.`
+            });
+            setTimeout(() => setShowTimeEndAlert({show: false, message: ""}), 5000);
             
-            // 일정 시간 후 알림 숨기기
-            setTimeout(() => {
-              setShowTimeEndAlert({show: false, message: ""})
-            }, 5000)
-            
-            return 0
+            // Persist that timer for the step has ended
+            updateLiveStateInSupabase({ isRunning: false, remainingTime: 0 });
+            setIsRunning(false); // Also update local isRunning state
+            return 0;
           }
-          return prev - 1
-        })
+          return prev - 1;
+        });
+        
+        const currentSpeakerForTimer = currentSpeakerRef.current;
+        const activeSpeakingTeamForTimer = activeSpeakingTeamRef.current;
 
-        // 자유토론에서 현재 발언 중인 팀이 있다면 팀 시간 갱신
-        if (steps[currentStepIndex]?.type === "자유토론" && activeSpeakingTeam) {
-          setTeamRemainingTime((prev) => {
-            // 이 팀의 남은 시간 가져오기 (null/undefined 체크 포함)
-            const prevTime = prev[activeSpeakingTeam] || 0;
-            const newTime = Math.max(0, prevTime - 1);
-            
-            // 팀 시간이 종료된 경우
-            if (newTime === 0 && prevTime > 0) {
-              if (soundEnabled) {
-                audioRef.current?.play();
-              }
-              
-              // 타이머 종료 알림 표시
-              setShowTimeEndAlert({
-                show: true, 
-                message: `${activeSpeakingTeam}팀의 시간이 모두 종료되었습니다.`
-              });
-              
-              // 일정 시간 후 알림 숨기기
-              setTimeout(() => {
-                setShowTimeEndAlert({show: false, message: ""});
-              }, 5000);
+        if (isFreeDebate && activeSpeakingTeamForTimer) {
+          setTeamRemainingTime(prevTeamTimes => {
+            const teamTime = prevTeamTimes[activeSpeakingTeamForTimer] || 0;
+            const newTeamTime = Math.max(0, teamTime - 1);
+            if (newTeamTime === 0 && teamTime > 0) {
+              if (soundEnabled) audioRef.current?.play();
+              setShowTimeEndAlert({show: true, message: `${activeSpeakingTeamForTimer}팀의 시간이 모두 종료되었습니다.`});
+              setTimeout(() => setShowTimeEndAlert({show: false, message: ""}), 5000);
+              // Persist team time ending - potentially as part of a larger update if speaker also stops
             }
-            
-            // 새 시간 상태 반환
-            return {
-              ...prev,
-              [activeSpeakingTeam]: newTime
-            };
-          })
+            return { ...prevTeamTimes, [activeSpeakingTeamForTimer]: newTeamTime };
+          });
         }
 
-        // Update speaker time if someone is speaking
-        if (currentSpeaker) {
-          setSpeakerTimeRemaining((prev) => {
-            if (prev <= 1) {
-              // Speaker's time is up
-              if (soundEnabled) {
-                audioRef.current?.play()
-              }
+        if (currentSpeakerForTimer) {
+          let finalSpeakerTime = 0;
+          setSpeakerTimeRemaining(prevSpeakerTime => {
+            finalSpeakerTime = prevSpeakerTime -1;
+            if (prevSpeakerTime <= 1) {
+              if (soundEnabled) audioRef.current?.play();
+              setShowTimeEndAlert({show: true, message: `${currentSpeakerForTimer.name}의 발언 시간이 종료되었습니다.`});
+              setTimeout(() => setShowTimeEndAlert({show: false, message: ""}), 5000);
               
-              // 발언자 시간 종료 알림 표시
-              setShowTimeEndAlert({
-                show: true, 
-                message: `${currentSpeaker.name}의 발언 시간이 종료되었습니다.`
-              })
-              
-              // 일정 시간 후 알림 숨기기
-              setTimeout(() => {
-                setShowTimeEndAlert({show: false, message: ""})
-              }, 5000)
-              
-              // 발언자의 시간이 종료되면 발언 종료 (자유토론에서)
-              if (steps[currentStepIndex]?.type === "자유토론") {
-                setCurrentSpeaker(null)
-                setActiveSpeakingTeam(null)
-                
-                // 다른 토론자들의 발언 상태도 초기화
-                setDebaters((prev) =>
-                  prev.map((d) => ({
-                    ...d,
-                    isSpeaking: false,
-                  }))
-                )
-              }
-              
-              return 0
-            }
-            return prev - 1
-          })
+              const updatedDebaters = debatersRef.current.map(d => 
+                d.id === currentSpeakerForTimer.id ? {...d, totalSpeakTime: d.totalSpeakTime + 1, isSpeaking: false } : d
+              );
+              setDebaters(updatedDebaters); // Update local debaters
 
-          // Update debater's total speak time
-          setDebaters((prev) =>
-            prev.map((d) => (d.id === currentSpeaker.id ? { ...d, totalSpeakTime: d.totalSpeakTime + 1 } : d)),
-          )
+              if (isFreeDebate) {
+                 // Persist speaker stopping and debater update
+                updateLiveStateInSupabase({ 
+                  speakerTimeRemaining: 0, 
+                  currentSpeakerId: null, 
+                  activeSpeakingTeam: null,
+                  debaters: updatedDebaters,
+                });
+                setCurrentSpeaker(null); // Update local state
+                setActiveSpeakingTeam(null); // Update local state
+              } else {
+                 // For non-free debate, just update time and debaters
+                 updateLiveStateInSupabase({speakerTimeRemaining: 0, debaters: updatedDebaters});
+              }
+              return 0;
+            }
+            return prevSpeakerTime - 1;
+          });
+
+          setDebaters(prevDebaters => 
+            prevDebaters.map(d => 
+              d.id === currentSpeakerForTimer.id ? { ...d, totalSpeakTime: d.totalSpeakTime + 1 } : d
+            )
+          );
         }
-      }, 1000)
+        
+        // Periodic sync of running timer values
+        if (newRemainingTimeLocal > 0 && newRemainingTimeLocal % 5 === 0) {
+             updateLiveStateInSupabase({
+                 remainingTime: newRemainingTimeLocal,
+                 ...(currentSpeakerForTimer && { speakerTimeRemaining: finalSpeakerTime }), // finalSpeakerTime is from the closure, might be an issue.
+                 // It's better to read from speakerTimeRemainingRef.current if needing the most recent.
+                 // However, for periodic sync, this might be acceptable.
+                 ...(activeSpeakingTeamForTimer && { teamRemainingTime: teamRemainingTimeRef.current }),
+                 debaters: debatersRef.current // Sync debaters too for totalSpeakTime
+             });
+         }
+
+      }, 1000);
     } else if (timerRef.current) {
-      clearInterval(timerRef.current)
+      clearInterval(timerRef.current);
     }
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-    }
-  }, [isRunning, currentSpeaker, currentStepIndex, steps, soundEnabled, activeSpeakingTeam])
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRunning, steps, soundEnabled, isInitialLoadComplete]); // isRunning is the primary trigger
+
+  const handleSetIsRunning = (running: boolean) => {
+    if (!isInitialLoadComplete || !isSubscribed) return; // Ensure subscription before allowing updates
+    setIsRunning(running); 
+    // Also sync current debaters state (especially totalSpeakTime) when pausing/playing
+    updateLiveStateInSupabase({ 
+      isRunning: running, 
+      remainingTime: remainingTimeRef.current, 
+      debaters: debatersRef.current 
+    });
+  }
 
   // Handle step change
   const handleStepChange = (index: number) => {
-    // 마지막 단계에서 다음 단계를 누르면 토론 종료 모달 표시
-    if (index >= steps.length) {
-      setIsRunning(false)
-      setShowDebateEndModal(true)
-      return
+    if (!isInitialLoadComplete || !isSubscribed) return;
+    
+    let newIsRunning = false;
+    let newShowDebateEndModal = showDebateEndModalRef.current; // Default to current
+
+    if (index >= steps.length) { // End of debate
+      newIsRunning = false;
+      newShowDebateEndModal = true;
+      setIsRunning(newIsRunning); 
+      setShowDebateEndModal(newShowDebateEndModal); 
+      updateLiveStateInSupabase({ 
+        isRunning: newIsRunning, 
+        showDebateEndModal: newShowDebateEndModal, 
+        currentStepIndex: currentStepIndexRef.current, // Persist current index at end
+        remainingTime: 0 // No remaining time at end
+      });
+      return;
     }
 
-    if (index < 0 || index >= steps.length) return
+    if (index < 0) return; // Should be disabled by UI
 
-    // Stop timer
-    setIsRunning(false)
-
-    // Reset current speaker
-    setCurrentSpeaker(null)
-    setActiveSpeakingTeam(null)
-
-    // Update current step index
-    setCurrentStepIndex(index)
-
-    // Set remaining time for the new step
-    setRemainingTime(steps[index].time)
-
-    // Reset speaker time remaining
-    setSpeakerTimeRemaining(0)
+    newIsRunning = false; // Stop timer on any manual step change
+    const newRemainingTime = steps[index].time;
+    
+    // Local state updates first
+    setIsRunning(newIsRunning);
+    setCurrentSpeaker(null); // Reset speaker
+    setActiveSpeakingTeam(null); // Reset team
+    setCurrentStepIndex(index);
+    setRemainingTime(newRemainingTime);
+    setSpeakerTimeRemaining(0); // Reset speaker time
+    // showDebateEndModal remains as is unless it's the end of debate (handled above)
+    
+    updateLiveStateInSupabase({ 
+      isRunning: newIsRunning, 
+      currentSpeakerId: null, 
+      activeSpeakingTeam: null, 
+      currentStepIndex: index, 
+      remainingTime: newRemainingTime, 
+      speakerTimeRemaining: 0,
+      showDebateEndModal: newShowDebateEndModal // Persist its current state
+    });
   }
 
-  // 팀 발언 토글 - 타입 수정
+  // 팀 발언 토글
   const handleTeamSpeaking = (team: "찬성" | "반대" | "긍정" | "부정") => {
-    // 토론자 설정이 비활성화된 경우
-    if (!enableDebaters || debaters.length <= 2) {
-      // 같은 팀을 다시 클릭하면 끄기
-      if (activeSpeakingTeam === team) {
-        setActiveSpeakingTeam(null)
-        return
-      }
+    if (!isInitialLoadComplete || !isSubscribed || (enableDebaters && debatersRef.current.length > 2)) return;
 
-      // 팀 남은 시간 체크
-      const teamTime = teamRemainingTime[team] || 0
+    let newActiveSpeakingTeam = activeSpeakingTeamRef.current;
+    let newCurrentSpeakerId = currentSpeakerRef.current?.id || null;
+    let newSpeakerTimeRemaining = speakerTimeRemainingRef.current;
+    let currentDebaterForTeam = debatersRef.current.find(d => d.team === team);
+
+
+    if (activeSpeakingTeamRef.current === team) { // Clicking the same active team
+      newActiveSpeakingTeam = null; // Stop speaking
+      newCurrentSpeakerId = null; // No specific speaker
+      // Speaker time remaining might be preserved or reset based on rules, here resetting for simplicity.
+      newSpeakerTimeRemaining = 0; 
+    } else { // Clicking a new team or no team was active
+      const teamTime = teamRemainingTimeRef.current[team] || 0;
       if (teamTime <= 0) {
-        if (soundEnabled) {
-          audioRef.current?.play()
-        }
-        return
+        if (soundEnabled) audioRef.current?.play();
+        return; // No time left for this team
       }
-
-      // 활성 팀 설정 및 발언자 찾기
-      setActiveSpeakingTeam(team)
-      const teamDebater = debaters.find(d => d.team === team)
-      if (teamDebater) {
-        // 이전에 선택된 팀과 같으면 발언 시간 유지
-        const isSameTeam = currentSpeaker?.team === team;
-        let newSpeakerTimeRemaining = speakerTimeRemaining;
-        
-        // 다른 팀이거나 발언 시간이 0이면 새로 계산
-        if (!isSameTeam || speakerTimeRemaining === 0) {
-          const maxTime = steps[currentStepIndex].maxSpeakTime || 0;
-          newSpeakerTimeRemaining = Math.min(maxTime, teamTime);
-        }
-        
-        setCurrentSpeaker(teamDebater)
-        setSpeakerTimeRemaining(newSpeakerTimeRemaining)
+      newActiveSpeakingTeam = team;
+      if (currentDebaterForTeam) { // If a debater object exists for the team (dummy or real)
+          newCurrentSpeakerId = currentDebaterForTeam.id;
+          // If switching to a new team or no speaker was active for the current team, or speaker time was 0
+          if (currentSpeakerRef.current?.team !== team || speakerTimeRemainingRef.current === 0) {
+            const maxTime = steps[currentStepIndexRef.current]?.maxSpeakTime || currentStepForTimer.time; // Fallback to step time if maxSpeakTime undefined
+            newSpeakerTimeRemaining = Math.min(maxTime, teamTime);
+          }
+      } else { // Should not happen if debaters are initialized correctly
+          newCurrentSpeakerId = null;
+          newSpeakerTimeRemaining = 0;
       }
     }
+    
+    setActiveSpeakingTeam(newActiveSpeakingTeam);
+    setCurrentSpeaker(debatersRef.current.find(d => d.id === newCurrentSpeakerId) || null);
+    setSpeakerTimeRemaining(newSpeakerTimeRemaining);
+    
+    updateLiveStateInSupabase({ 
+      activeSpeakingTeam: newActiveSpeakingTeam, 
+      currentSpeakerId: newCurrentSpeakerId,
+      speakerTimeRemaining: newSpeakerTimeRemaining,
+      debaters: debatersRef.current // Persist current debater states (isSpeaking might change)
+    });
   }
 
   // Handle speaker selection
   const handleSpeakerSelect = (debater: Debater) => {
-    // Only allow speaker selection in free debate
-    if (steps[currentStepIndex]?.type !== "자유토론") return
+    if (!isInitialLoadComplete || !isSubscribed || steps[currentStepIndexRef.current]?.type !== "자유토론") return;
 
-    // If the same speaker is clicked, toggle speaking state
-    if (currentSpeaker?.id === debater.id) {
-      setCurrentSpeaker(null)
-      setActiveSpeakingTeam(null)
-      setSpeakerTimeRemaining(0)
-      return
-    }
+    let newCurrentSpeakerId = currentSpeakerRef.current?.id || null;
+    let newActiveSpeakingTeam = activeSpeakingTeamRef.current;
+    let newSpeakerTimeRemaining = speakerTimeRemainingRef.current;
+    let newDebaters = [...debatersRef.current]; // Create a new array for modification
 
-    // Team time check with null/undefined check
-    const teamTime = teamRemainingTime[debater.team] || 0;
-    
-    // Check if team has remaining time
-    if (teamTime <= 0) {
-      if (soundEnabled) {
-        audioRef.current?.play()
+    if (currentSpeakerRef.current?.id === debater.id) { // Clicking the current speaker
+      newCurrentSpeakerId = null; // Stop this speaker
+      newActiveSpeakingTeam = null; // No team is actively speaking via a selected debater
+      newSpeakerTimeRemaining = 0; // Reset speaker time
+      newDebaters = newDebaters.map(d => ({ ...d, isSpeaking: false })); // Mark all as not speaking
+    } else { // Clicking a new speaker
+      const teamTime = teamRemainingTimeRef.current[debater.team] || 0;
+      if (teamTime <= 0 && steps[currentStepIndexRef.current]?.type === "자유토론") { // Check team time only for free debate
+        if (soundEnabled) audioRef.current?.play();
+        return; // Team has no time left
       }
-      return
-    }
-
-    // 이전 발언자와 새 발언자의 팀이 같은 경우, 이전 발언 시간 유지
-    const isSameTeam = currentSpeaker?.team === debater.team;
-    let newSpeakerTimeRemaining = speakerTimeRemaining;
-    
-    // 새 발언자나 팀이 다른 경우에만 최대 발언 시간 새로 계산
-    if (!isSameTeam || speakerTimeRemaining === 0) {
-      const maxTime = steps[currentStepIndex].maxSpeakTime || 0;
-      newSpeakerTimeRemaining = Math.min(maxTime, teamTime);
+      newCurrentSpeakerId = debater.id;
+      newActiveSpeakingTeam = debater.team; // This speaker's team becomes active
+      // If switching to a new speaker (even within the same team) or if current speaker time was 0,
+      // reset their allowed speaking time based on rules.
+      const maxTime = steps[currentStepIndexRef.current].maxSpeakTime || currentStepForTimer.time;
+      newSpeakerTimeRemaining = Math.min(maxTime, teamTime); // Speaker can speak up to maxSpeakTime or remaining team time
+      
+      newDebaters = newDebaters.map((d) => ({ ...d, isSpeaking: d.id === debater.id }));
     }
     
-    // Set new speaker
-    setCurrentSpeaker(debater)
-    setActiveSpeakingTeam(debater.team)
+    setCurrentSpeaker(newDebaters.find(d => d.id === newCurrentSpeakerId) || null);
+    setActiveSpeakingTeam(newActiveSpeakingTeam);
+    setSpeakerTimeRemaining(newSpeakerTimeRemaining);
+    setDebaters(newDebaters);
 
-    // 계산된 발언 시간 설정
-    setSpeakerTimeRemaining(newSpeakerTimeRemaining)
-
-    // Update debaters to show who is speaking
-    setDebaters((prev) =>
-      prev.map((d) => ({
-        ...d,
-        isSpeaking: d.id === debater.id,
-      })),
-    )
+    updateLiveStateInSupabase({ 
+      currentSpeakerId: newCurrentSpeakerId,
+      activeSpeakingTeam: newActiveSpeakingTeam,
+      speakerTimeRemaining: newSpeakerTimeRemaining,
+      debaters: newDebaters // This now includes the updated isSpeaking status
+    });
   }
 
   // Format seconds to MM:SS
@@ -804,21 +984,36 @@ export default function DebatePage() {
             size="lg"
             className="h-14 w-14"
             onClick={() => {
-              setIsRunning(false)
-              setRemainingTime(currentStep?.time || 0)
-              setSpeakerTimeRemaining(currentStep?.maxSpeakTime || 0)
+              if (!isInitialLoadComplete || !isSubscribed) return;
+              const stepTime = steps[currentStepIndexRef.current]?.time || 0;
+              const speakerMaxTime = steps[currentStepIndexRef.current]?.maxSpeakTime || 0;
+              
+              setIsRunning(false); // Local update
+              setRemainingTime(stepTime); // Local update
+              setSpeakerTimeRemaining(speakerMaxTime); // Local update
+              // setCurrentSpeaker(null); // Optionally reset speaker on step reset
+              // setActiveSpeakingTeam(null); // Optionally reset team on step reset
+              
+              updateLiveStateInSupabase({ 
+                isRunning: false, 
+                remainingTime: stepTime, 
+                speakerTimeRemaining: speakerMaxTime,
+                // currentSpeakerId: null, // Optional: reset these too
+                // activeSpeakingTeam: null, // Optional: reset these too
+                debaters: debatersRef.current.map(d => ({...d, isSpeaking: false})) // Ensure all are not speaking
+              });
             }}
           >
             <RotateCcw className="h-6 w-6" />
           </Button>
 
           <Button
-            variant={isRunning ? "destructive" : "default"}
+            variant={isRunningRef.current ? "destructive" : "default"} // Use ref for UI consistency
             size="lg"
             className="h-14 w-14"
-            onClick={() => setIsRunning(!isRunning)}
+            onClick={() => handleSetIsRunning(!isRunningRef.current)} // isRunningRef ensures we toggle based on latest state
           >
-            {isRunning ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+            {isRunningRef.current ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
           </Button>
         </div>
       </Card>
@@ -930,4 +1125,3 @@ export default function DebatePage() {
     </div>
   )
 }
-

@@ -24,6 +24,7 @@ interface DebateSetupFormProps {
   selectedTemplate: DebateTemplate;
   onBackToTemplates: () => void;
   onStartDebate: (config: DebateConfig) => void;
+  isLoading?: boolean;
 }
 
 export interface DebateConfig {
@@ -34,6 +35,7 @@ export interface DebateConfig {
   enableDebaters: boolean;
   university?: string | null;
   debaterNames?: string[];
+  templateName: string; // Added templateName to DebateConfig
 }
 
 // 초 단위를 MM:SS 형식으로 변환
@@ -79,6 +81,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
   const [showSchoolVariantModal, setShowSchoolVariantModal] = useState(false)
   const [showGuide, setShowGuide] = useState(true)
   const [showGuidePopup, setShowGuidePopup] = useState(false)
+  const { isLoading } = props; // Destructure isLoading from props
   
   // 토론자 이름 설정 - 빈 문자열로 초기화
   const [debaterNames, setDebaterNames] = useState<string[]>([
@@ -742,9 +745,9 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
       </div>
 
       {/* 토론 시작 버튼 - 고정된 높이로 수정 */}
-      <Button className="w-full h-12 sm:h-14 text-base sm:text-lg py-2 sm:py-3" onClick={handleStartDebate} size="lg">
-        토론 시작하기
-        <ChevronRight className="ml-2 h-5 w-5" />
+      <Button className="w-full h-12 sm:h-14 text-base sm:text-lg py-2 sm:py-3" onClick={handleStartDebate} size="lg" disabled={isLoading}>
+        {isLoading ? "토론 시작 중..." : "토론 시작하기"}
+        {!isLoading && <ChevronRight className="ml-2 h-5 w-5" />}
       </Button>
     </div>
   )
