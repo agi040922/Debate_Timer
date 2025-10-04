@@ -346,6 +346,9 @@ export default function DebatePage() {
             <span className={`text-xs px-2 py-1 rounded-full ${isModerator ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
               {isModerator ? '👑 진행자' : '👁️ 관찰자'}
             </span>
+            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+              방 #{roomId}
+            </span>
             {isConnecting && (
               <span className="text-xs text-yellow-600">연결 중...</span>
             )}

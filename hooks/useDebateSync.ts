@@ -61,6 +61,18 @@ export function useDebateSync(roomId: string): UseDebateSyncReturn {
         const groupName = `debate.${roomId}`;
         await clientRef.current.sendToGroup(groupName, JSON.stringify(state), 'text');
         console.log('🔄 토론 상태 브로드캐스트 완료:', groupName);
+        
+        // 서버에도 상태 저장
+        try {
+          await fetch('/api/check-room', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomId, debateState: state })
+          });
+          console.log('💾 서버에 토론 상태 저장 완료');
+        } catch (serverError) {
+          console.error('❌ 서버에 토론 상태 저장 실패:', serverError);
+        }
       } catch (error) {
         console.error('❌ 토론 상태 브로드캐스트 실패:', error);
       }
@@ -173,11 +185,22 @@ export function useDebateSync(roomId: string): UseDebateSyncReturn {
         console.log('🏠 토론 그룹 조인:', groupName);
         await client.joinGroup(groupName);
         
-        // 연결 완료 후 참가자는 localStorage의 debateConfig 삭제 (진행자만 유지)
+        // 관찰자인 경우 서버에서 토론 상태 가져오기
         if (!isModeratorUser) {
-          console.log('👁️ 참가자는 debateConfig 삭제');
-          // 참가자는 debateConfig를 삭제하여 다음 접속 시에도 참가자로 인식되도록 함
-          // localStorage.removeItem("debateConfig"); // 주석 처리: 페이지 새로고침 시 문제 방지
+          console.log('👁️ 관찰자 - 서버에서 토론 상태 가져오기 시도');
+          try {
+            const stateResponse = await fetch(`/api/check-room?room=${roomId}`);
+            const stateData = await stateResponse.json();
+            
+            if (stateData.exists && stateData.state) {
+              console.log('📥 서버에서 토론 상태 받음:', stateData.state);
+              setDebateState(stateData.state);
+            } else {
+              console.log('⏳ 서버에 토론 상태가 없음 - 호스트가 시작할 때까지 대기');
+            }
+          } catch (error) {
+            console.error('❌ 서버에서 토론 상태 가져오기 실패:', error);
+          }
         }
 
       } catch (error) {

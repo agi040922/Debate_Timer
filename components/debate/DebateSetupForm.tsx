@@ -799,7 +799,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
           )}
           {!isCheckingRoom && !roomError && (
             <p className="text-xs text-gray-500">
-              다른 사람과 토론을 함께하려면 참여 코드를 입력하세요. 코드를 비워두면 나만 볼 수 있는 토론이 시작됩니다.
+              다른 사람과 함께 보려면 참여 코드를 입력하세요. 코드를 비워두면 나만 볼 수 있는 토론이 시작됩니다.
             </p>
           )}
         </div>
