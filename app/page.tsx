@@ -28,8 +28,15 @@ export default function Home() {
   // 토론 시작 처리
   const handleStartDebate = (config: DebateConfig) => {
     // 토론 설정을 localStorage에 저장
-    localStorage.setItem("debateConfig", JSON.stringify(config))
-    router.push("/debate")
+    localStorage.setItem("debateConfig", JSON.stringify(config));
+
+    if (config.roomId) {
+      router.push(`/debate/${config.roomId}`);
+    } else {
+      // 실시간이 아닌 로컬 토론의 경우, 고유한 ID를 생성하여 충돌 방지
+      const localRoomId = `local-${Date.now()}`;
+      router.push(`/debate/${localRoomId}`);
+    }
   }
 
   return (

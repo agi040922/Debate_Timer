@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
-import { Plus, Minus, Clock, Users, ChevronRight, RotateCcw, School, Info, User, X } from "lucide-react"
+import { Plus, Minus, Clock, Users, ChevronRight, RotateCcw, School, Info, User, X, Globe } from "lucide-react"
 import { DebateTemplate, DebateStep, SchoolVariant, IconType } from "@/lib/types/debate"
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -34,6 +34,7 @@ export interface DebateConfig {
   enableDebaters: boolean;
   university?: string | null;
   debaterNames?: string[];
+  roomId?: string;
 }
 
 // 초 단위를 MM:SS 형식으로 변환
@@ -79,6 +80,7 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
   const [showSchoolVariantModal, setShowSchoolVariantModal] = useState(false)
   const [showGuide, setShowGuide] = useState(true)
   const [showGuidePopup, setShowGuidePopup] = useState(false)
+  const [roomId, setRoomId] = useState("")
   
   // 토론자 이름 설정 - 빈 문자열로 초기화
   const [debaterNames, setDebaterNames] = useState<string[]>([
@@ -258,7 +260,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
       templateName: selectedTemplate.name,
       enableDebaters,
       university: selectedTemplate.university || null,
-      debaterNames: finalDebaterNames
+      debaterNames: finalDebaterNames,
+      roomId,
     })
   }
   
@@ -739,6 +742,37 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
             </div>
           </div>
         )}
+      </div>
+
+      {/* 실시간 토론방 설정 */}
+      <div className="bg-white rounded-lg p-3 sm:p-6 border shadow-sm">
+        <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center">
+          <Globe className="mr-2 h-5 w-5" />
+          실시간 토론방 설정 (선택)
+        </h3>
+        <div className="space-y-2">
+          <Label htmlFor="room-id">참여 코드 (1~999 숫자)</Label>
+          <Input
+            id="room-id"
+            type="number"
+            value={roomId}
+            onChange={(e) => {
+              const value = e.target.value;
+              // 숫자만, 1-999 사이, 최대 3자리
+              if (/^\d{0,3}$/.test(value)) {
+                const num = parseInt(value, 10);
+                if (value === "" || (num >= 1 && num <= 999)) {
+                  setRoomId(value);
+                }
+              }
+            }}
+            placeholder="코드를 입력하거나, 비워두고 새로 만드세요"
+            className="h-10"
+          />
+          <p className="text-xs text-gray-500">
+            다른 사람과 토론을 함께하려면 참여 코드를 입력하세요. 코드를 비워두면 나만 볼 수 있는 토론이 시작됩니다.
+          </p>
+        </div>
       </div>
 
       {/* 토론 시작 버튼 - 고정된 높이로 수정 */}

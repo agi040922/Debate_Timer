@@ -51,4 +51,13 @@ export interface SchoolVariant {
   steps: DebateStep[]
   icon?: IconType;
   description?: string;
-} 
+}
+
+// 토론자 인터페이스
+export interface Debater {
+  id: string;
+  name: string;
+  team: "찬성" | "반대" | "긍정" | "부정";
+  totalSpeakTime: number;
+  isSpeaking: boolean;
+}
