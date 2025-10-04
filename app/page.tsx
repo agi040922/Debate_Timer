@@ -7,7 +7,9 @@ import { debateTemplates } from "@/lib/debate-templates"
 import { schoolVariants } from "@/lib/school-variants"
 import { DebateTemplateSelector } from "@/components/debate/DebateTemplateSelector"
 import { DebateSetupForm, DebateConfig } from "@/components/debate/DebateSetupForm"
-import { ArrowDown, MessageSquare, Timer, Users2 } from "lucide-react"
+import { ArrowDown, MessageSquare, Timer, Users2, LogIn } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 // 템플릿에 학교별 방식 추가
 debateTemplates.forEach(template => {
@@ -19,23 +21,97 @@ debateTemplates.forEach(template => {
 export default function Home() {
   const router = useRouter()
   const [selectedTemplate, setSelectedTemplate] = useState<DebateTemplate | null>(null)
+  const [joinRoomId, setJoinRoomId] = useState("")
+  const [joinError, setJoinError] = useState("")
+  const [isJoining, setIsJoining] = useState(false)
 
   // 템플릿 선택 처리
   const handleSelectTemplate = (template: DebateTemplate) => {
     setSelectedTemplate(template)
   }
 
-  // 토론 시작 처리
-  const handleStartDebate = (config: DebateConfig) => {
+  // 토론 시작 처리 (진행자로 입장)
+  const handleStartDebate = async (config: DebateConfig) => {
     // 토론 설정을 localStorage에 저장
     localStorage.setItem("debateConfig", JSON.stringify(config));
 
     if (config.roomId) {
-      router.push(`/debate/${config.roomId}`);
+      try {
+        console.log('🔍 방 중복 확인 중...', config.roomId);
+        
+        // 방 존재 여부 확인
+        const checkResponse = await fetch(`/api/check-room?room=${config.roomId}`);
+        const checkData = await checkResponse.json();
+        
+        if (checkData.exists) {
+          alert(`방 번호 "${config.roomId}"는 이미 사용 중입니다. 다른 번호를 선택해주세요.`);
+          return;
+        }
+        
+        // 새 방 생성 등록
+        const createResponse = await fetch('/api/check-room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: config.roomId })
+        });
+        
+        if (!createResponse.ok) {
+          throw new Error('방 생성 실패');
+        }
+        
+        console.log('✅ 방 생성 완료, 진행자로 입장');
+        router.push(`/debate/${config.roomId}`);
+      } catch (error) {
+        console.error('❌ 방 생성 오류:', error);
+        alert('방 생성 중 오류가 발생했습니다.');
+      }
     } else {
       // 실시간이 아닌 로컬 토론의 경우, 고유한 ID를 생성하여 충돌 방지
       const localRoomId = `local-${Date.now()}`;
       router.push(`/debate/${localRoomId}`);
+    }
+  }
+
+  // 방 참가 처리 (참가자로만 입장)
+  const handleJoinRoom = async () => {
+    const roomId = joinRoomId.trim();
+    if (!roomId) return;
+    
+    setIsJoining(true);
+    setJoinError("");
+    
+    try {
+      console.log('🔍 방 존재 여부 확인 중...', roomId);
+      const response = await fetch(`/api/check-room?room=${roomId}`);
+      const data = await response.json();
+      
+      if (!data.exists) {
+        setJoinError("존재하지 않는 방입니다. 방 번호를 확인해주세요.");
+        setIsJoining(false);
+        return;
+      }
+      
+      console.log('✅ 방 존재 확인됨, 참가자로 입장');
+      
+      // 참가자로 입장하기 전에 해당 방의 localStorage 삭제 (진행자 권한 제거)
+      const debateConfig = localStorage.getItem("debateConfig");
+      if (debateConfig) {
+        try {
+          const config = JSON.parse(debateConfig);
+          if (config.roomId === roomId) {
+            console.log('🗑️ 해당 방의 진행자 권한 제거');
+            localStorage.removeItem("debateConfig");
+          }
+        } catch (error) {
+          console.error('localStorage 처리 오류:', error);
+        }
+      }
+      
+      router.push(`/debate/${roomId}`);
+    } catch (error) {
+      console.error('❌ 방 확인 오류:', error);
+      setJoinError("방 확인 중 오류가 발생했습니다.");
+      setIsJoining(false);
     }
   }
 
@@ -70,16 +146,48 @@ export default function Home() {
                   <p>학교별 맞춤 토론 방식 지원</p>
                 </div>
               </div>
-              <button
-                onClick={() => window.scrollTo({
-                  top: document.getElementById('templates')?.offsetTop || 500,
-                  behavior: 'smooth'
-                })}
-                className="flex items-center bg-white text-blue-700 px-5 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-              >
-                토론 시작하기
-                <ArrowDown className="ml-2 h-4 w-4" />
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button
+                  onClick={() => window.scrollTo({
+                    top: document.getElementById('templates')?.offsetTop || 500,
+                    behavior: 'smooth'
+                  })}
+                  className="flex items-center justify-center bg-white text-blue-700 px-5 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+                >
+                  토론 시작하기
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                </button>
+                
+                {/* 바로 들어가기 */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="방 ID 입력 (참가자로 입장)"
+                      value={joinRoomId}
+                      onChange={(e) => {
+                        setJoinRoomId(e.target.value);
+                        setJoinError(""); // 입력 시 오류 메시지 초기화
+                      }}
+                      onKeyPress={(e) => e.key === 'Enter' && !isJoining && handleJoinRoom()}
+                      className="bg-white/90 border-white/20 text-gray-700 placeholder:text-gray-500"
+                      disabled={isJoining}
+                    />
+                    <Button
+                      onClick={handleJoinRoom}
+                      disabled={!joinRoomId.trim() || isJoining}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <LogIn className="h-4 w-4 mr-1" />
+                      {isJoining ? "확인 중..." : "참가"}
+                    </Button>
+                  </div>
+                  {joinError && (
+                    <div className="text-red-200 text-sm bg-red-500/20 px-3 py-2 rounded">
+                      {joinError}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="hidden md:block">
               <img 

@@ -81,6 +81,8 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
   const [showGuide, setShowGuide] = useState(true)
   const [showGuidePopup, setShowGuidePopup] = useState(false)
   const [roomId, setRoomId] = useState("")
+  const [roomError, setRoomError] = useState("")
+  const [isCheckingRoom, setIsCheckingRoom] = useState(false)
   
   // 토론자 이름 설정 - 빈 문자열로 초기화
   const [debaterNames, setDebaterNames] = useState<string[]>([
@@ -763,21 +765,54 @@ export function DebateSetupForm({ selectedTemplate, onBackToTemplates, onStartDe
                 const num = parseInt(value, 10);
                 if (value === "" || (num >= 1 && num <= 999)) {
                   setRoomId(value);
+                  setRoomError(""); // 입력 시 오류 메시지 초기화
                 }
+              }
+            }}
+            onBlur={async () => {
+              // 방 번호 입력 완료 시 중복 확인
+              if (roomId.trim()) {
+                setIsCheckingRoom(true);
+                try {
+                  const response = await fetch(`/api/check-room?room=${roomId}`);
+                  const data = await response.json();
+                  if (data.exists) {
+                    setRoomError("이미 사용 중인 방 번호입니다. 다른 번호를 선택해주세요.");
+                  } else {
+                    setRoomError("");
+                  }
+                } catch (error) {
+                  console.error('방 확인 오류:', error);
+                  setRoomError("방 번호 확인 중 오류가 발생했습니다.");
+                }
+                setIsCheckingRoom(false);
               }
             }}
             placeholder="코드를 입력하거나, 비워두고 새로 만드세요"
             className="h-10"
           />
-          <p className="text-xs text-gray-500">
-            다른 사람과 토론을 함께하려면 참여 코드를 입력하세요. 코드를 비워두면 나만 볼 수 있는 토론이 시작됩니다.
-          </p>
+          {isCheckingRoom && (
+            <p className="text-xs text-blue-600">방 번호 확인 중...</p>
+          )}
+          {roomError && (
+            <p className="text-xs text-red-600">{roomError}</p>
+          )}
+          {!isCheckingRoom && !roomError && (
+            <p className="text-xs text-gray-500">
+              다른 사람과 토론을 함께하려면 참여 코드를 입력하세요. 코드를 비워두면 나만 볼 수 있는 토론이 시작됩니다.
+            </p>
+          )}
         </div>
       </div>
 
       {/* 토론 시작 버튼 - 고정된 높이로 수정 */}
-      <Button className="w-full h-12 sm:h-14 text-base sm:text-lg py-2 sm:py-3" onClick={handleStartDebate} size="lg">
-        토론 시작하기
+      <Button 
+        className="w-full h-12 sm:h-14 text-base sm:text-lg py-2 sm:py-3" 
+        onClick={handleStartDebate} 
+        size="lg"
+        disabled={roomError !== "" || isCheckingRoom}
+      >
+        {isCheckingRoom ? "방 번호 확인 중..." : "토론 시작하기 (진행자로 입장)"}
         <ChevronRight className="ml-2 h-5 w-5" />
       </Button>
     </div>

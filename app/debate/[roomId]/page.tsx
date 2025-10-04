@@ -16,7 +16,7 @@ export default function DebatePage() {
   const params = useParams()
   const roomId = params.roomId as string;
 
-  const { debateState, isConnecting, updateDebateState, initializeDebateState } = useDebateSync(roomId);
+  const { debateState, isConnecting, isModerator, userRole, updateDebateState, initializeDebateState } = useDebateSync(roomId);
 
   // Local UI state that doesn't need to be synced
   const [templateName, setTemplateName] = useState("")
@@ -97,7 +97,16 @@ export default function DebatePage() {
   useEffect(() => {
     // Initialize audio only once
     audioRef.current = new Audio("/beep.mp3");
-  }, []);
+    
+    // 페이지 언마운트 시 방 삭제 (진행자만)
+    return () => {
+      if (isModerator && roomId && !roomId.startsWith('local-')) {
+        fetch(`/api/check-room?room=${roomId}`, { method: 'DELETE' })
+          .then(() => console.log('🗑️ 방 삭제 완료:', roomId))
+          .catch(err => console.error('❌ 방 삭제 오류:', err));
+      }
+    };
+  }, [isModerator, roomId]);
 
   // Timer effect
   useEffect(() => {
@@ -331,7 +340,17 @@ export default function DebatePage() {
           <Home className="h-5 w-5 mr-1" />
           <span className="text-sm">홈</span>
         </Link>
-        <h1 className="text-xl font-bold">{templateName}</h1>
+        <div className="text-center">
+          <h1 className="text-xl font-bold">{templateName}</h1>
+          <div className="flex items-center justify-center gap-2 mt-1">
+            <span className={`text-xs px-2 py-1 rounded-full ${isModerator ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+              {isModerator ? '👑 진행자' : '👁️ 관찰자'}
+            </span>
+            {isConnecting && (
+              <span className="text-xs text-yellow-600">연결 중...</span>
+            )}
+          </div>
+        </div>
         <Button variant="ghost" size="sm" className="text-gray-600" onClick={() => setSoundEnabled(!soundEnabled)}>
           {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
         </Button>
@@ -345,7 +364,8 @@ export default function DebatePage() {
               key={step.id}
               variant={index === currentStepIndex ? "default" : "outline"}
               className={`text-xs px-2 py-1 h-auto whitespace-nowrap ${index === currentStepIndex ? "bg-primary" : ""}`}
-              onClick={() => handleStepChange(index)}
+              onClick={() => isModerator && handleStepChange(index)}
+              disabled={!isModerator}
             >
               {index + 1}. {step.type}
               {step.team && ` (${step.team})`}
@@ -378,7 +398,13 @@ export default function DebatePage() {
         {currentStep?.type === "자유토론" && (
            <div className="w-full">
             <div className="flex justify-between mb-2">
-              <Button variant="outline" size="sm" className={`text-xs h-7 ${timeEditMode ? 'bg-red-50 text-red-600 border-red-300' : ''}`} onClick={() => setTimeEditMode(!timeEditMode)}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className={`text-xs h-7 ${timeEditMode ? 'bg-red-50 text-red-600 border-red-300' : ''}`} 
+                onClick={() => isModerator && setTimeEditMode(!timeEditMode)}
+                disabled={!isModerator}
+              >
                 {timeEditMode ? "수정 완료" : "시간 오류 수정"}
               </Button>
               <div className="relative">
@@ -409,8 +435,8 @@ export default function DebatePage() {
             )}
 
             <div className="grid grid-cols-2 gap-8 w-full mb-6">
-              <div className={`text-center p-4 rounded-lg border-2 cursor-pointer transition-all ${activeSpeakingTeam === "찬성" || activeSpeakingTeam === "긍정" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-blue-300"}`}
-                onClick={() => { if (!timeEditMode) handleTeamSpeaking(isPositiveTeam(steps) ? "긍정" : "찬성"); }}>
+              <div className={`text-center p-4 rounded-lg border-2 ${isModerator ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} transition-all ${activeSpeakingTeam === "찬성" || activeSpeakingTeam === "긍정" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-blue-300"}`}
+                onClick={() => { if (!timeEditMode && isModerator) handleTeamSpeaking(isPositiveTeam(steps) ? "긍정" : "찬성"); }}>
                 <div className="font-medium mb-1">{isPositiveTeam(steps) ? "긍정팀" : "찬성팀"}</div>
                 <div className="text-3xl font-bold text-blue-500 mb-2">{formatTime(isPositiveTeam(steps) ? (teamRemainingTime.긍정 || 0) : (teamRemainingTime.찬성 || 0))}</div>
                 <Progress value={calculateProgress(isPositiveTeam(steps) ? (teamRemainingTime.긍정 || 0) : (teamRemainingTime.찬성 || 0), currentStep?.time ? currentStep.time / 2 : 1)} className="w-full h-3" />
@@ -425,8 +451,8 @@ export default function DebatePage() {
                   </div>
                 )}
               </div>
-              <div className={`text-center p-4 rounded-lg border-2 cursor-pointer transition-all ${activeSpeakingTeam === "반대" || activeSpeakingTeam === "부정" ? "border-orange-500 bg-orange-50" : "border-gray-200 hover:border-orange-300"}`}
-                onClick={() => { if (!timeEditMode) handleTeamSpeaking(isNegativeTeam(steps) ? "부정" : "반대"); }}>
+              <div className={`text-center p-4 rounded-lg border-2 ${isModerator ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} transition-all ${activeSpeakingTeam === "반대" || activeSpeakingTeam === "부정" ? "border-orange-500 bg-orange-50" : "border-gray-200 hover:border-orange-300"}`}
+                onClick={() => { if (!timeEditMode && isModerator) handleTeamSpeaking(isNegativeTeam(steps) ? "부정" : "반대"); }}>
                 <div className="font-medium mb-1">{isNegativeTeam(steps) ? "부정팀" : "반대팀"}</div>
                 <div className="text-3xl font-bold text-orange-500 mb-2">{formatTime(isNegativeTeam(steps) ? (teamRemainingTime.부정 || 0) : (teamRemainingTime.반대 || 0))}</div>
                 <Progress value={calculateProgress(isNegativeTeam(steps) ? (teamRemainingTime.부정 || 0) : (teamRemainingTime.반대 || 0), currentStep?.time ? currentStep.time / 2 : 1)} className="w-full h-3" />
@@ -449,7 +475,12 @@ export default function DebatePage() {
                   <div>
                     <h4 className="text-xs font-medium text-blue-700 mb-1">{isPositiveTeam(steps) ? "긍정팀" : "찬성팀"}</h4>
                     {debaters.filter(d => d.team === "찬성" || d.team === "긍정").map(debater => (
-                      <button key={debater.id} className={`flex items-center justify-between w-full p-2 mt-1 rounded-md text-xs ${debater.isSpeaking ? "bg-blue-500 text-white" : "bg-white border"}`} onClick={() => handleSpeakerSelect(debater)}>
+                      <button 
+                        key={debater.id} 
+                        className={`flex items-center justify-between w-full p-2 mt-1 rounded-md text-xs ${debater.isSpeaking ? "bg-blue-500 text-white" : "bg-white border"} ${!isModerator ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                        onClick={() => isModerator && handleSpeakerSelect(debater)}
+                        disabled={!isModerator}
+                      >
                         <span>{debater.name}</span><span>{formatTime(debater.totalSpeakTime)}</span>
                       </button>
                     ))}
@@ -457,7 +488,12 @@ export default function DebatePage() {
                   <div>
                     <h4 className="text-xs font-medium text-orange-700 mb-1">{isNegativeTeam(steps) ? "부정팀" : "반대팀"}</h4>
                     {debaters.filter(d => d.team === "반대" || d.team === "부정").map(debater => (
-                      <button key={debater.id} className={`flex items-center justify-between w-full p-2 mt-1 rounded-md text-xs ${debater.isSpeaking ? "bg-orange-500 text-white" : "bg-white border"}`} onClick={() => handleSpeakerSelect(debater)}>
+                      <button 
+                        key={debater.id} 
+                        className={`flex items-center justify-between w-full p-2 mt-1 rounded-md text-xs ${debater.isSpeaking ? "bg-orange-500 text-white" : "bg-white border"} ${!isModerator ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                        onClick={() => isModerator && handleSpeakerSelect(debater)}
+                        disabled={!isModerator}
+                      >
                         <span>{debater.name}</span><span>{formatTime(debater.totalSpeakTime)}</span>
                       </button>
                     ))}
@@ -470,10 +506,22 @@ export default function DebatePage() {
 
         {/* Timer controls */}
         <div className="flex space-x-4">
-          <Button variant="outline" size="lg" className="h-14 w-14" onClick={() => updateDebateState(p => ({ isRunning: false, remainingTime: p.steps[p.currentStepIndex].time, speakerTimeRemaining: 0 }))}>
+          <Button 
+            variant="outline" 
+            size="lg" 
+            className="h-14 w-14" 
+            onClick={() => isModerator && updateDebateState(p => ({ isRunning: false, remainingTime: p.steps[p.currentStepIndex].time, speakerTimeRemaining: 0 }))}
+            disabled={!isModerator}
+          >
             <RotateCcw className="h-6 w-6" />
           </Button>
-          <Button variant={isRunning ? "destructive" : "default"} size="lg" className="h-14 w-14" onClick={() => updateDebateState(p => ({ isRunning: !p.isRunning }))}>
+          <Button 
+            variant={isRunning ? "destructive" : "default"} 
+            size="lg" 
+            className="h-14 w-14" 
+            onClick={() => isModerator && updateDebateState(p => ({ isRunning: !p.isRunning }))}
+            disabled={!isModerator}
+          >
             {isRunning ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
           </Button>
         </div>
@@ -481,10 +529,20 @@ export default function DebatePage() {
 
       {/* Navigation controls */}
       <div className="flex justify-between mb-4">
-        <Button variant="outline" className="w-32" onClick={() => handleStepChange(currentStepIndex - 1)} disabled={currentStepIndex === 0}>
+        <Button 
+          variant="outline" 
+          className="w-32" 
+          onClick={() => isModerator && handleStepChange(currentStepIndex - 1)} 
+          disabled={!isModerator || currentStepIndex === 0}
+        >
           <ChevronLeft className="mr-2 h-4 w-4" /> 이전 단계
         </Button>
-        <Button variant="outline" className="w-32" onClick={() => handleStepChange(currentStepIndex + 1)}>
+        <Button 
+          variant="outline" 
+          className="w-32" 
+          onClick={() => isModerator && handleStepChange(currentStepIndex + 1)}
+          disabled={!isModerator}
+        >
           {currentStepIndex === steps.length - 1 ? "토론 종료" : "다음 단계"} <ChevronRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
